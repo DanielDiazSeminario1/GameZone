@@ -7,30 +7,69 @@ class Productos extends ResourceController
     protected $modelName = 'App\Models\ProductosModel';
     protected $format    = 'json'; // Siempre responderemos en JSON
 
-    // 1. LISTAR TODOS (GET /productos)
-    // 1. LISTAR PRODUCTOS (Con datos enriquecidos: Marca, País, Serie, Año)
-   public function index()
+    // 1. LISTAR PRODUCTOS (GET /productos) - CON PAGINACIÓN Y FILTROS AVANZADOS
+    public function index()
     {
-        // 1. Capturamos la búsqueda del cliente (ej: ?q=asus)
-        $busqueda = $this->request->getVar('q');
+        // 1. CAPTURA Y VALIDACIÓN DE PARÁMETROS
+        $busqueda = $this->request->getVar('q');        // Filtro genérico: ?q=Razer
+        $pagina   = $this->request->getVar('page');     // Paginación: ?page=2
+        $limite_solicitado = (int)$this->request->getVar('limit'); // Límite: ?limit=20
+        $filtro_tipo = $this->request->getVar('tipo');   // Filtro por palabra clave (Ej: Laptop, Monitor)
+        $filtro_year = $this->request->getVar('anio');   // Filtro por año (Ej: 2020)
 
-        // 2. Preparamos la consulta con los nombres bonitos (JOINs)
-        $builder = $this->model
-            ->select('productos.id, productos.modelo, productos.precio, productos.stock')
-            ->select('series.nombre_serie, fabricantes.nombre_empresa')
+        // 2. CONTROL DE LÍMITE
+        $limite_por_pagina = 5; // Valor por defecto
+        if ($limite_solicitado > 0 && $limite_solicitado <= 100) {
+            $limite_por_pagina = $limite_solicitado;
+        } else if ($limite_solicitado > 100) {
+            $limite_por_pagina = 100; // Máximo de seguridad
+        }
+
+        // 3. GUARDIÁN ANTI-PÁGINAS INVÁLIDAS
+        // Bloquea números negativos y el cero
+        if (isset($pagina) && (int)$pagina < 1) {
+            return $this->fail('El número de página debe ser mayor a 0.', 400);
+        }
+
+        // 4. PREPARAR CONSULTA (JOINs y Selects de datos enriquecidos)
+        $this->model
+            // Seleccionamos los campos necesarios
+            ->select('productos.id, productos.modelo, productos.precio, productos.stock, productos.garantia_meses')
+            ->select('series.nombre_serie, series.publico_objetivo, series.anio_lanzamiento') 
+            ->select('fabricantes.nombre_empresa, fabricantes.pais_origen')
+            
             ->join('series', 'series.id = productos.id_serie')
             ->join('fabricantes', 'fabricantes.id = series.id_fabricante');
 
-        // 3. SI hay búsqueda, filtramos
-        if ($busqueda) {
-            $builder->groupStart()
-                    ->like('productos.modelo', $busqueda)             // Busca por nombre
-                    ->orLike('fabricantes.nombre_empresa', $busqueda) // O por marca
-                    ->groupEnd();
+        // 5. APLICAR FILTROS ESPECÍFICOS (Buena Práctica: where() para concretos)
+        if ($filtro_tipo) {
+            // Ejemplo: ?tipo=Laptop (Busca la palabra 'Laptop' en el nombre del modelo)
+            $this->model->like('productos.modelo', $filtro_tipo); 
+        }
+        if ($filtro_year) {
+            // Ejemplo: ?anio=2020 (Busca productos lanzados en 2020 o después)
+            $this->model->where('series.anio_lanzamiento >=', $filtro_year);
         }
 
-        // 4. Entregamos resultados
-        $data = $builder->findAll();
+        // 6. APLICAR FILTRO GENÉRICO ('q')
+        if ($busqueda) {
+            $this->model->groupStart()
+                ->like('productos.modelo', $busqueda)
+                ->orLike('fabricantes.nombre_empresa', $busqueda)
+                ->orLike('series.nombre_serie', $busqueda) // Búsqueda avanzada en el nombre de la serie
+                ->groupEnd();
+        }
+
+        // 7. DEVOLVER CON PAGINACIÓN Y METADATOS
+        $data = [
+            'productos' => $this->model->paginate($limite_por_pagina), 
+            'paginacion' => [
+                'pagina_actual' => $this->model->pager->getCurrentPage(),
+                'por_pagina'    => $limite_por_pagina,
+                'total_datos'   => $this->model->pager->getTotal(),
+                'total_paginas' => $this->model->pager->getPageCount()
+            ]
+        ];
 
         return $this->respond($data);
     }
@@ -38,6 +77,9 @@ class Productos extends ResourceController
     // 2. VER UNO SOLO (GET /productos/{id})
     public function show($id = null)
     {
+        // El resto de tu CRUD de show, create, update, delete sigue igual
+        // ... (código show, create, update, delete)
+        
         $data = $this->model->find($id);
         
         if (!$data) {
@@ -67,10 +109,9 @@ class Productos extends ResourceController
 
     // 4. EDITAR (PUT /productos/{id})
     public function update($id = null)
-    {
+    { 
         $json = $this->request->getJSON();
         
-        // CodeIgniter es inteligente: solo actualiza los campos que envíes
         if ($this->model->update($id, $json)) {
             return $this->respond(['mensaje' => 'Producto actualizado']);
         }
