@@ -7,56 +7,67 @@ class Productos extends ResourceController
     protected $modelName = 'App\Models\ProductosModel';
     protected $format    = 'json'; // Siempre responderemos en JSON
 
-    // 1. LISTAR PRODUCTOS (GET /productos) - CON PAGINACIÓN Y FILTROS AVANZADOS
+    // 1. LISTAR PRODUCTOS (GET /productos) - CON Paginación, Filtros y Ordenamiento
     public function index()
     {
         // 1. CAPTURA Y VALIDACIÓN DE PARÁMETROS
-        $busqueda = $this->request->getVar('q');        // Filtro genérico: ?q=Razer
-        $pagina   = $this->request->getVar('page');     // Paginación: ?page=2
-        $limite_solicitado = (int)$this->request->getVar('limit'); // Límite: ?limit=20
-        $filtro_tipo = $this->request->getVar('tipo');   // Filtro por palabra clave (Ej: Laptop, Monitor)
-        $filtro_year = $this->request->getVar('anio');   // Filtro por año (Ej: 2020)
+        $busqueda = $this->request->getVar('q');
+        $pagina   = $this->request->getVar('page');
+        $limite_solicitado = (int)$this->request->getVar('limit');
+        $filtro_tipo = $this->request->getVar('tipo');
+        $filtro_year = $this->request->getVar('anio');
+        $sortField = $this->request->getVar('sort');
+        $sortDir   = strtoupper($this->request->getVar('order') ?? 'ASC');
 
-        // 2. CONTROL DE LÍMITE
+        // 2. CONTROL DE LÍMITE Y VALIDACIÓN
         $limite_por_pagina = 5; // Valor por defecto
         if ($limite_solicitado > 0 && $limite_solicitado <= 100) {
             $limite_por_pagina = $limite_solicitado;
         } else if ($limite_solicitado > 100) {
             $limite_por_pagina = 100; // Máximo de seguridad
         }
-
-        // 3. GUARDIÁN ANTI-PÁGINAS INVÁLIDAS
-        // Bloquea números negativos y el cero
+        
+        // GUARDIÁN ANTI-PÁGINAS INVÁLIDAS (Bloquea page=0 y negativos)
         if (isset($pagina) && (int)$pagina < 1) {
             return $this->fail('El número de página debe ser mayor a 0.', 400);
         }
 
-        // 4. PREPARAR CONSULTA (JOINs y Selects de datos enriquecidos)
+        // 3. PREPARAR CONSULTA (JOINs y Selects)
         $this->model
             // Seleccionamos los campos necesarios
             ->select('productos.id, productos.modelo, productos.precio, productos.stock, productos.garantia_meses')
+            // Datos enriquecidos para el cliente
             ->select('series.nombre_serie, series.publico_objetivo, series.anio_lanzamiento') 
             ->select('fabricantes.nombre_empresa, fabricantes.pais_origen')
             
+            // Uniones (JOINs)
             ->join('series', 'series.id = productos.id_serie')
             ->join('fabricantes', 'fabricantes.id = series.id_fabricante');
 
-        // 5. APLICAR FILTROS ESPECÍFICOS (Buena Práctica: where() para concretos)
+        // 4. APLICAR ORDENACIÓN DINÁMICA
+        $allowedSorts = [
+            'nombre'  => 'productos.modelo', 'empresa' => 'fabricantes.nombre_empresa', 
+            'publico' => 'series.publico_objetivo', 'precio' => 'productos.precio',
+        ];
+        $orderByColumn = $allowedSorts[$sortField] ?? 'productos.modelo';
+        if (in_array($sortDir, ['ASC', 'DESC'])) {
+             $this->model->orderBy($orderByColumn, $sortDir);
+        }
+
+        // 5. APLICAR FILTROS ESPECÍFICOS
         if ($filtro_tipo) {
-            // Ejemplo: ?tipo=Laptop (Busca la palabra 'Laptop' en el nombre del modelo)
             $this->model->like('productos.modelo', $filtro_tipo); 
         }
         if ($filtro_year) {
-            // Ejemplo: ?anio=2020 (Busca productos lanzados en 2020 o después)
             $this->model->where('series.anio_lanzamiento >=', $filtro_year);
         }
 
-        // 6. APLICAR FILTRO GENÉRICO ('q')
+        // 6. APLICAR FILTRO GENÉRICO ('q') - Busca en las 3 tablas
         if ($busqueda) {
             $this->model->groupStart()
                 ->like('productos.modelo', $busqueda)
                 ->orLike('fabricantes.nombre_empresa', $busqueda)
-                ->orLike('series.nombre_serie', $busqueda) // Búsqueda avanzada en el nombre de la serie
+                ->orLike('series.nombre_serie', $busqueda)
                 ->groupEnd();
         }
 
@@ -77,9 +88,6 @@ class Productos extends ResourceController
     // 2. VER UNO SOLO (GET /productos/{id})
     public function show($id = null)
     {
-        // El resto de tu CRUD de show, create, update, delete sigue igual
-        // ... (código show, create, update, delete)
-        
         $data = $this->model->find($id);
         
         if (!$data) {
@@ -88,22 +96,29 @@ class Productos extends ResourceController
         return $this->respond($data);
     }
 
-    // 3. CREAR (POST /productos)
+    // 3. CREAR (POST /productos) - SOPORTA INSERCIÓN ÚNICA Y POR LOTE
     public function create()
     {
-        $json = $this->request->getJSON();
-        
-        $data = [
-            'modelo'         => $json->modelo,
-            'precio'         => $json->precio,
-            'stock'          => $json->stock,
-            'garantia_meses' => $json->garantia_meses,
-            'id_serie'       => $json->id_serie
-        ];
+        // Usamos getJSON(true) para obtener un array asociativo y poder usar is_array()
+        $json = $this->request->getJSON(true); 
 
-        if ($this->model->insert($data)) {
-            return $this->respondCreated(['mensaje' => 'Producto creado correctamente']);
+        // Verificamos si el JSON contiene un array de objetos (un lote)
+        $isBatch = (is_array($json) && count($json) > 0 && is_array($json[0]));
+
+        if ($isBatch) {
+            // --- INSERCIÓN DE LOTE (insertBatch) ---
+            if ($this->model->insertBatch($json)) {
+                // Éxito: Creado con código 201
+                return $this->respondCreated(['mensaje' => 'Lote de productos creado correctamente']);
+            }
+        } else {
+            // --- INSERCIÓN UNITARIA (insert) ---
+            if ($this->model->insert($json)) {
+                return $this->respondCreated(['mensaje' => 'Producto creado correctamente']);
+            }
         }
+        
+        // Si falló (validación, datos faltantes, etc.)
         return $this->fail($this->model->errors());
     }
 
