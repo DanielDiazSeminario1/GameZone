@@ -9,26 +9,28 @@ class Productos extends ResourceController
 
     // 1. LISTAR TODOS (GET /productos)
     // 1. LISTAR PRODUCTOS (Con datos enriquecidos: Marca, País, Serie, Año)
-    public function index()
+   public function index()
     {
-        $data = $this->model
-            // A. SELECCIONAMOS SOLO LO QUE EL CLIENTE DEBE VER (Filtro)
-            // Datos del Producto
-            ->select('productos.id, productos.modelo, productos.precio, productos.stock, productos.garantia_meses')
-            // Datos de la Serie (Contexto: Gamer, Militar, Año)
-            ->select('series.nombre_serie, series.publico_objetivo, series.anio_lanzamiento')
-            // Datos del Fabricante (Origen: Nombre, País) -> OJO: No pedimos email ni web
-            ->select('fabricantes.nombre_empresa, fabricantes.pais_origen')
-            
-            // B. HACEMOS LAS UNIONES (Conectamos las tablas)
-            // Unimos Producto con Serie (El Hijo con el Padre)
+        // 1. Capturamos la búsqueda del cliente (ej: ?q=asus)
+        $busqueda = $this->request->getVar('q');
+
+        // 2. Preparamos la consulta con los nombres bonitos (JOINs)
+        $builder = $this->model
+            ->select('productos.id, productos.modelo, productos.precio, productos.stock')
+            ->select('series.nombre_serie, fabricantes.nombre_empresa')
             ->join('series', 'series.id = productos.id_serie')
+            ->join('fabricantes', 'fabricantes.id = series.id_fabricante');
 
-            // Unimos Serie con Fabricante (El Padre con el Abuelo)
-            ->join('fabricantes', 'fabricantes.id = series.id_fabricante')
+        // 3. SI hay búsqueda, filtramos
+        if ($busqueda) {
+            $builder->groupStart()
+                    ->like('productos.modelo', $busqueda)             // Busca por nombre
+                    ->orLike('fabricantes.nombre_empresa', $busqueda) // O por marca
+                    ->groupEnd();
+        }
 
-            // C. TRAEMOS TODO
-            ->findAll();
+        // 4. Entregamos resultados
+        $data = $builder->findAll();
 
         return $this->respond($data);
     }
