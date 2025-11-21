@@ -7,3 +7,5 @@ use CodeIgniter\Router\RouteCollection;
  */
 $routes->get('/', 'Home::index');
 $routes->resource('productos');
+$routes->resource('series');
+$routes->resource('fabricantes');

@@ -7,7 +7,7 @@ class Productos extends ResourceController
     protected $modelName = 'App\Models\ProductosModel';
     protected $format    = 'json'; // Siempre responderemos en JSON
 
-    // 1. LISTAR PRODUCTOS (GET /productos) - CON Paginación, Filtros y Ordenamiento
+    // 1. LISTAR PRODUCTOS (GET /productos)
     public function index()
     {
         // 1. CAPTURA Y VALIDACIÓN DE PARÁMETROS
@@ -27,29 +27,28 @@ class Productos extends ResourceController
             $limite_por_pagina = 100; // Máximo de seguridad
         }
         
-        // GUARDIÁN ANTI-PÁGINAS INVÁLIDAS (Bloquea page=0 y negativos)
+        // GUARDIÁN ANTI-PÁGINAS INVÁLIDAS
         if (isset($pagina) && (int)$pagina < 1) {
             return $this->fail('El número de página debe ser mayor a 0.', 400);
         }
 
         // 3. PREPARAR CONSULTA (JOINs y Selects)
         $this->model
-            // Seleccionamos los campos necesarios
             ->select('productos.id, productos.modelo, productos.precio, productos.stock, productos.garantia_meses')
-            // Datos enriquecidos para el cliente
             ->select('series.nombre_serie, series.publico_objetivo, series.anio_lanzamiento') 
             ->select('fabricantes.nombre_empresa, fabricantes.pais_origen')
-            
-            // Uniones (JOINs)
             ->join('series', 'series.id = productos.id_serie')
             ->join('fabricantes', 'fabricantes.id = series.id_fabricante');
 
         // 4. APLICAR ORDENACIÓN DINÁMICA
         $allowedSorts = [
-            'nombre'  => 'productos.modelo', 'empresa' => 'fabricantes.nombre_empresa', 
-            'publico' => 'series.publico_objetivo', 'precio' => 'productos.precio',
+            'nombre'  => 'productos.modelo', 
+            'empresa' => 'fabricantes.nombre_empresa', 
+            'publico' => 'series.publico_objetivo', 
+            'precio'  => 'productos.precio',
         ];
         $orderByColumn = $allowedSorts[$sortField] ?? 'productos.modelo';
+        
         if (in_array($sortDir, ['ASC', 'DESC'])) {
              $this->model->orderBy($orderByColumn, $sortDir);
         }
@@ -62,16 +61,16 @@ class Productos extends ResourceController
             $this->model->where('series.anio_lanzamiento >=', $filtro_year);
         }
 
-        // 6. APLICAR FILTRO GENÉRICO ('q') - Busca en las 3 tablas
+        // 6. APLICAR FILTRO GENÉRICO ('q')
         if ($busqueda) {
             $this->model->groupStart()
                 ->like('productos.modelo', $busqueda)
                 ->orLike('fabricantes.nombre_empresa', $busqueda)
                 ->orLike('series.nombre_serie', $busqueda)
-        // LÍNEA AÑADIDA: Ahora busca en el país de origen del fabricante
                 ->orLike('fabricantes.pais_origen', $busqueda)
                 ->groupEnd();
         }
+
         // 7. DEVOLVER CON PAGINACIÓN Y METADATOS
         $data = [
             'productos' => $this->model->paginate($limite_por_pagina), 
@@ -97,49 +96,79 @@ class Productos extends ResourceController
         return $this->respond($data);
     }
 
-    // 3. CREAR (POST /productos) - SOPORTA INSERCIÓN ÚNICA Y POR LOTE
+    // 3. CREAR (POST /productos) - SOPORTA INSERCIÓN ÚNICA
     public function create()
     {
-        // Usamos getJSON(true) para obtener un array asociativo y poder usar is_array()
-        $json = $this->request->getJSON(true); 
+        // A. Intentamos obtener datos de formulario (form-data/x-www-form-urlencoded)
+        $data = $this->request->getPost();
 
-        // Verificamos si el JSON contiene un array de objetos (un lote)
-        $isBatch = (is_array($json) && count($json) > 0 && is_array($json[0]));
-
-        if ($isBatch) {
-            // --- INSERCIÓN DE LOTE (insertBatch) ---
-            if ($this->model->insertBatch($json)) {
-                // Éxito: Creado con código 201
-                return $this->respondCreated(['mensaje' => 'Lote de productos creado correctamente']);
-            }
-        } else {
-            // --- INSERCIÓN UNITARIA (insert) ---
-            if ($this->model->insert($json)) {
-                return $this->respondCreated(['mensaje' => 'Producto creado correctamente']);
-            }
+        // B. Si está vacío, intentamos obtener el JSON puro (RAW Body)
+        // Usamos true para que sea un array asociativo
+        if (empty($data)) {
+            $data = $this->request->getJSON(true);
         }
-        
-        // Si falló (validación, datos faltantes, etc.)
+
+        // C. Validación de seguridad: ¿Llegaron datos?
+        if (empty($data)) {
+             return $this->fail('No se han enviado datos para crear el producto.', 400);
+        }
+
+        // D. VERIFICACIÓN DE LOTE (CORRECCIÓN PRINCIPAL)
+        // Verificamos si existe la clave numérica 0. Si existe, es un array de objetos (lote).
+        // Si no existe, es un array asociativo único ['modelo' => 'X']
+        if (array_key_exists(0, $data)) {
+            return $this->fail('Este endpoint no soporta lotes (arrays numéricos). Envíe un solo objeto JSON.', 400);
+        }
+
+        // E. INSERCIÓN UNITARIA
+        if ($this->model->insert($data)) {
+            // Devolvemos mensaje y el ID creado si es posible
+            $nuevoId = $this->model->getInsertID();
+            return $this->respondCreated([
+                'mensaje' => 'Producto creado correctamente',
+                'id' => $nuevoId
+            ]);
+        }
+
+        // Si falla (validaciones del modelo, etc.)
         return $this->fail($this->model->errors());
     }
 
     // 4. EDITAR (PUT /productos/{id})
     public function update($id = null)
-    { 
-        $json = $this->request->getJSON();
+    {
+        // CORRECCIÓN: Usamos getJSON(true) para manejarlo como Array Asociativo
+        // igual que en el create, lo cual es más compatible con las validaciones del modelo.
+        $data = $this->request->getJSON(true);
         
-        if ($this->model->update($id, $json)) {
-            return $this->respond(['mensaje' => 'Producto actualizado']);
+        // Fallback: Si envían x-www-form-urlencoded en PUT (raro pero posible)
+        if (empty($data)) {
+            $data = $this->request->getRawInput();
         }
+
+        if (empty($data)) {
+            return $this->fail('No hay datos para actualizar.', 400);
+        }
+
+        // Intentamos actualizar
+        if ($this->model->update($id, $data)) {
+            return $this->respond(['mensaje' => 'Producto actualizado correctamente']);
+        }
+        
         return $this->fail($this->model->errors());
     }
 
     // 5. BORRAR (DELETE /productos/{id})
     public function delete($id = null)
     {
-        if ($this->model->delete($id)) {
-            return $this->respondDeleted(['mensaje' => 'Producto eliminado']);
+        // Primero verificamos si existe para dar un feedback más preciso
+        $producto = $this->model->find($id);
+        
+        if ($producto) {
+             $this->model->delete($id);
+             return $this->respondDeleted(['mensaje' => 'Producto eliminado']);
         }
-        return $this->failNotFound('No se pudo eliminar (tal vez no existe)');
+        
+        return $this->failNotFound('No se pudo eliminar: el producto con ese ID no existe');
     }
 }
