@@ -68,9 +68,10 @@ class Productos extends ResourceController
                 ->like('productos.modelo', $busqueda)
                 ->orLike('fabricantes.nombre_empresa', $busqueda)
                 ->orLike('series.nombre_serie', $busqueda)
+        // LÍNEA AÑADIDA: Ahora busca en el país de origen del fabricante
+                ->orLike('fabricantes.pais_origen', $busqueda)
                 ->groupEnd();
         }
-
         // 7. DEVOLVER CON PAGINACIÓN Y METADATOS
         $data = [
             'productos' => $this->model->paginate($limite_por_pagina), 

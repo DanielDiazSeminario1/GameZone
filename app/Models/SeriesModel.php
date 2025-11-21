@@ -7,4 +7,4 @@ class SeriesModel extends Model
     protected $primaryKey = 'id';
     protected $allowedFields = ['nombre_serie', 'publico_objetivo', 'anio_lanzamiento', 'id_fabricante'];
     protected $returnType = 'array';
-}
+}   

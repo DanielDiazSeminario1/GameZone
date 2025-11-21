@@ -34,5 +34,6 @@ class ProductosModel extends Model
         'precio' => [
             'numeric' => 'El precio debe ser un número real.'
         ]
+        
     ];
 }
