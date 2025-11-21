@@ -31,7 +31,7 @@
 #--------------------------------------------------------------------
 
 # database.default.hostname = localhost
-# database.default.database = ci4
+ database.default.database = db_gamerzone_pro
 # database.default.username = root
 # database.default.password = root
 # database.default.DBDriver = MySQLi
