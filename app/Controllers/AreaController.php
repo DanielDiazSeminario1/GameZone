@@ -163,7 +163,7 @@ class AreaController extends ResourceController
 
         if ($this->areaModel->update($row['id'], ['deleted_at' => 1])) {
             return $this->respondDeleted([
-                'message' => 'Área eliminada correctamente.',
+                'message' => 'Área eliminada correctamente.',       
                 'uuid' => $uuid
             ]);
         }
