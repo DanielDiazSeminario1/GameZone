@@ -20,7 +20,8 @@ class InventarioModel extends Model
 
     public $allowedFields = [
         'uuid',
-        'id_area', // Debe estar aquí para guardarse
+        'sku', // <--- 1. NUEVO CAMPO AGREGADO
+        'id_area',
         'nombre',
         'descripcion',
         'created_at',
@@ -30,15 +31,20 @@ class InventarioModel extends Model
 
     protected $validationRules = [
         'nombre'      => 'required|max_length[255]',
-        // Validación correcta: Esperamos un UUID (string 36 chars)
-        'id_area'     => 'required|max_length[36]', 
+        'id_area'     => 'required|max_length[36]',
+        // 2. REGLA SKU: Opcional (permit_empty), pero si escriben algo, debe ser único
+        'sku'           => 'required|is_unique[inventario.sku,id,{id}]|max_length[50]',
         'descripcion' => 'permit_empty',
     ];
 
     protected $validationMessages = [
-        'nombre' => ['required' => 'El nombre es obligatorio.'],
-        'id_area' => ['required' => 'El UUID del área es obligatorio.']
-    ];
+        'nombre'  => ['required' => 'El nombre es obligatorio.'],
+        'id_area' => ['required' => 'El UUID del área es obligatorio.'],
+        'sku'     => [
+        'required'  => 'El SKU es obligatorio. No se puede dejar vacío.',
+        'is_unique' => 'Este SKU ya existe. Intenta con otro.'
+        ]
+    ];  
 
     protected $beforeInsert = ['generateUUID'];
 
@@ -55,24 +61,18 @@ class InventarioModel extends Model
         $data = $this->where('uuid', $uuid)->where('deleted_at', 0)->first();
         if (!$data) return null;
 
-        // Enriquecer con Área
         $db = \Config\Database::connect();
         $data['area'] = null;
         
         if (!empty($data['id_area'])) {
             $area = $db->table('area')
-                        // --- CORRECCIÓN CLAVE AQUÍ ---
-                        // Usamos 'as id_area' para que el JSON salga con la etiqueta correcta
                         ->select('uuid as id_area, nombre') 
-                        ->where('uuid', $data['id_area']) // Buscamos por el UUID que tenemos guardado
+                        ->where('uuid', $data['id_area'])
                         ->get()->getRowArray();
-            
             if ($area) $data['area'] = $area;
         }
         
-        // Limpiamos el id_area del nivel raíz para no duplicar info, ya que está dentro de 'area'
         unset($data['id_area'], $data['updated_at'], $data['deleted_at'], $data['id']);
-        
         return $data;
     }
 }

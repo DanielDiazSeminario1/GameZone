@@ -28,8 +28,7 @@ class InventarioController extends ResourceController
     }
 
     /**
-     * 📋 Listar inventario (GET)
-     * Estructura y Paginación IDÉNTICA a AreaController
+     * 📋 Listar (GET) - Con SKU y Paginación Manual
      */
     public function index()
     {
@@ -38,44 +37,45 @@ class InventarioController extends ResourceController
         $page = max(1, (int) ($this->request->getGet('page') ?? 1));
         $offset = ($page - 1) * $size;
 
-        // 2. Filtros
+        // 2. Capturar Filtros
         $uuid   = $this->request->getGet('uuid');
         $idArea = $this->request->getGet('id_area');
         $nombre = $this->request->getGet('nombre');
+        $sku    = $this->request->getGet('sku'); // <--- NUEVO: Capturar SKU
 
-        // 3. Query Builder Manual (Para control total y evitar errores de pager)
+        // 3. Query Builder Manual
         $builder = $this->inventarioModel->builder();
         $builder->select('uuid')->where('deleted_at', 0);
 
+        // Aplicar Filtros
         if (!empty($uuid))   $builder->where('uuid', $uuid);
         if (!empty($idArea)) $builder->where('id_area', $idArea);
         if (!empty($nombre)) $builder->like('nombre', $nombre);
+        if (!empty($sku))    $builder->where('sku', $sku); // <--- NUEVO: Filtrar por SKU
 
-        // 4. Obtener Totales (Para calcular totalPages y totalItems)
+        // 4. Totales
         $countBuilder = clone $builder;
         $totalItems = $countBuilder->countAllResults();
 
-        // 5. Obtener Datos de la página actual
+        // 5. Datos
         $builder->orderBy('id', 'DESC');
         $result = $builder->get($size, $offset)->getResultArray();
 
-        // 6. Hidratar (Llenar info completa de Área)
+        // 6. Hidratar
         foreach ($result as &$item) {
             $fullData = $this->inventarioModel->findByUuid($item['uuid']);
             $item = $fullData ? $fullData : null;
         }
         $result = array_values(array_filter($result));
 
-        // 7. Calcular Paginación
+        // 7. Pager
         $totalPages = ($totalItems > 0) ? (int) ceil($totalItems / $size) : 1;
 
-        // 8. RESPUESTA JSON (Estructura Estándar Igual a Área)
+        // 8. Respuesta
         return $this->respond([
             'status'  => 200,
             'message' => ($totalItems === 0) ? 'No se encontraron resultados' : 'OK',
             'data'    => $result,
-            
-            // 👇 ESTE BLOQUE AHORA ES IDÉNTICO AL DE ÁREA 👇
             'pager'   => [
                 'currentPage' => $page,
                 'totalPages'  => $totalPages,

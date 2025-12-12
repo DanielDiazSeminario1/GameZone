@@ -26,7 +26,7 @@ class Cors extends BaseConfig
      */
     public array $default = [
         /**
-         * Origins for the `Access-Control-Allow-Origin` header.
+         * Origins for the Access-Control-Allow-Origin header.
          *
          * @see https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Access-Control-Allow-Origin
          *
@@ -37,12 +37,12 @@ class Cors extends BaseConfig
         'allowedOrigins' => [],
 
         /**
-         * Origin regex patterns for the `Access-Control-Allow-Origin` header.
+         * Origin regex patterns for the Access-Control-Allow-Origin header.
          *
          * @see https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Access-Control-Allow-Origin
          *
          * NOTE: A pattern specified here is part of a regular expression. It will
-         *       be actually `#\A<pattern>\z#`.
+         *       be actually #\A<pattern>\z#.
          *
          * E.g.:
          *   - ['https://\w+\.example\.com']
@@ -50,7 +50,7 @@ class Cors extends BaseConfig
         'allowedOriginsPatterns' => [],
 
         /**
-         * Weather to send the `Access-Control-Allow-Credentials` header.
+         * Weather to send the Access-Control-Allow-Credentials header.
          *
          * The Access-Control-Allow-Credentials response header tells browsers whether
          * the server allows cross-origin HTTP requests to include credentials.

@@ -53,6 +53,7 @@ class Filters extends BaseFilters
         'before' => [
             'forcehttps', // Force Global Secure Requests
             'pagecache',  // Web Page Caching
+            'corsfilter',
         ],
         'after' => [
             'pagecache',   // Web Page Caching
