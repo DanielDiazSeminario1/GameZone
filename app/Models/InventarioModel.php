@@ -20,7 +20,8 @@ class InventarioModel extends Model
 
     public $allowedFields = [
         'uuid',
-        'sku', // <--- 1. NUEVO CAMPO AGREGADO
+        'sku',
+        'propietario', // <--- 1. NUEVO CAMPO
         'id_area',
         'nombre',
         'descripcion',
@@ -32,8 +33,11 @@ class InventarioModel extends Model
     protected $validationRules = [
         'nombre'      => 'required|max_length[255]',
         'id_area'     => 'required|max_length[36]',
-        // 2. REGLA SKU: Opcional (permit_empty), pero si escriben algo, debe ser único
-        'sku'           => 'required|is_unique[inventario.sku,id,{id}]|max_length[50]',
+        'sku'         => 'required|is_unique[inventario.sku,id,{id}]|max_length[50]', // Asumiendo que lo dejaste obligatorio
+        
+        // 2. NUEVA REGLA: Opcional y texto libre
+        'propietario' => 'permit_empty|max_length[255]', 
+        
         'descripcion' => 'permit_empty',
     ];
 
@@ -41,10 +45,10 @@ class InventarioModel extends Model
         'nombre'  => ['required' => 'El nombre es obligatorio.'],
         'id_area' => ['required' => 'El UUID del área es obligatorio.'],
         'sku'     => [
-        'required'  => 'El SKU es obligatorio. No se puede dejar vacío.',
-        'is_unique' => 'Este SKU ya existe. Intenta con otro.'
+            'required'  => 'El SKU es obligatorio.',
+            'is_unique' => 'Este SKU ya existe.'
         ]
-    ];  
+    ];
 
     protected $beforeInsert = ['generateUUID'];
 
