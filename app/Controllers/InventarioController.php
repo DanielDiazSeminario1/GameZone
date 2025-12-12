@@ -5,6 +5,7 @@ namespace App\Controllers;
 use CodeIgniter\RESTful\ResourceController;
 use App\Models\InventarioModel;
 use App\Models\AreaModel;
+use App\Models\CategoriaModel; // <--- Importamos el Modelo de Categoría
 use CodeIgniter\HTTP\RequestInterface;
 use CodeIgniter\HTTP\ResponseInterface;
 use Psr\Log\LoggerInterface;
@@ -17,6 +18,7 @@ class InventarioController extends ResourceController
 
     private InventarioModel $inventarioModel;
     private AreaModel $areaModel;
+    private CategoriaModel $categoriaModel; // <--- Propiedad nueva
     protected $db;
 
     public function initController(RequestInterface $request, ResponseInterface $response, LoggerInterface $logger)
@@ -25,10 +27,11 @@ class InventarioController extends ResourceController
         $this->db = Database::connect();
         $this->inventarioModel = new InventarioModel();
         $this->areaModel = new AreaModel();
+        $this->categoriaModel = new CategoriaModel(); // <--- Inicializamos
     }
 
     /**
-     * 📋 Listar (GET) - Con SKU y Paginación Manual
+     * 📋 Listar (GET) - Filtros Actualizados (Sin Nombre, Con Categoría)
      */
     public function index()
     {
@@ -37,21 +40,24 @@ class InventarioController extends ResourceController
         $page = max(1, (int) ($this->request->getGet('page') ?? 1));
         $offset = ($page - 1) * $size;
 
-        // 2. Capturar Filtros
-        $uuid   = $this->request->getGet('uuid');
-        $idArea = $this->request->getGet('id_area');
-        $nombre = $this->request->getGet('nombre');
-        $sku    = $this->request->getGet('sku'); // <--- NUEVO: Capturar SKU
+        // 2. Filtros
+        $uuid        = $this->request->getGet('uuid');
+        $idArea      = $this->request->getGet('id_area');
+        $idCategoria = $this->request->getGet('id_categoria'); // <--- Nuevo Filtro
+        $sku         = $this->request->getGet('sku');
+        $propietario = $this->request->getGet('propietario');
+        // NOTA: 'nombre' ya fue eliminado
 
         // 3. Query Builder Manual
         $builder = $this->inventarioModel->builder();
         $builder->select('uuid')->where('deleted_at', 0);
 
         // Aplicar Filtros
-        if (!empty($uuid))   $builder->where('uuid', $uuid);
-        if (!empty($idArea)) $builder->where('id_area', $idArea);
-        if (!empty($nombre)) $builder->like('nombre', $nombre);
-        if (!empty($sku))    $builder->where('sku', $sku); // <--- NUEVO: Filtrar por SKU
+        if (!empty($uuid))        $builder->where('uuid', $uuid);
+        if (!empty($idArea))      $builder->where('id_area', $idArea);
+        if (!empty($idCategoria)) $builder->where('id_categoria', $idCategoria); // <--- Aplicamos
+        if (!empty($sku))         $builder->where('sku', $sku);
+        if (!empty($propietario)) $builder->like('propietario', $propietario);
 
         // 4. Totales
         $countBuilder = clone $builder;
@@ -61,7 +67,7 @@ class InventarioController extends ResourceController
         $builder->orderBy('id', 'DESC');
         $result = $builder->get($size, $offset)->getResultArray();
 
-        // 6. Hidratar
+        // 6. Hidratar (El modelo se encarga de traer Area y Categoria)
         foreach ($result as &$item) {
             $fullData = $this->inventarioModel->findByUuid($item['uuid']);
             $item = $fullData ? $fullData : null;
@@ -93,10 +99,20 @@ class InventarioController extends ResourceController
     public function create()
     {
         $data = $this->request->getJSON(true) ?? [];
+        
+        // Validaciones Manuales de Integridad
         if (empty($data['id_area'])) return $this->failValidationErrors('id_area obligatorio.');
+        if (empty($data['id_categoria'])) return $this->failValidationErrors('id_categoria obligatorio.'); // <--- Validar input
 
-        $existeArea = $this->areaModel->where('uuid', $data['id_area'])->first();
-        if (!$existeArea) return $this->failValidationErrors('Área no existe.');
+        // Verificar existencia de Área
+        if (!$this->areaModel->where('uuid', $data['id_area'])->first()) {
+            return $this->failValidationErrors('Área no existe.');
+        }
+
+        // Verificar existencia de Categoría
+        if (!$this->categoriaModel->where('uuid', $data['id_categoria'])->first()) {
+            return $this->failValidationErrors('Categoría no existe.');
+        }
 
         $data['uuid'] = $data['uuid'] ?? Uuid::uuid4()->toString();
 
@@ -132,10 +148,19 @@ class InventarioController extends ResourceController
 
         $data = $this->request->getJSON(true) ?? [];
         unset($data['id'], $data['uuid'], $data['created_at']);
+        unset($data['nombre']); // Nos aseguramos de limpiar nombre si lo envían
 
+        // Validar cambio de Área
         if (isset($data['id_area']) && !empty($data['id_area'])) {
             if (!$this->areaModel->where('uuid', $data['id_area'])->first()) {
                 return $this->failNotFound('Nueva área no existe.');
+            }
+        }
+
+        // Validar cambio de Categoría
+        if (isset($data['id_categoria']) && !empty($data['id_categoria'])) {
+            if (!$this->categoriaModel->where('uuid', $data['id_categoria'])->first()) {
+                return $this->failNotFound('Nueva categoría no existe.');
             }
         }
 
@@ -159,6 +184,8 @@ class InventarioController extends ResourceController
         $itemRaw = $this->inventarioModel->where('uuid', $uuid)->where('deleted_at', 0)->first();
         if (!$itemRaw) return $this->failNotFound('No encontrado');
 
+        // La base de datos podría bloquear esto si hay dependencias, 
+        // pero como es soft-delete (deleted_at=1), no habrá problema con las FK.
         $this->inventarioModel->update($itemRaw['id'], ['deleted_at' => 1]);
 
         return $this->respondDeleted(['message' => 'Eliminado correctamente']);

@@ -21,9 +21,10 @@ class InventarioModel extends Model
     public $allowedFields = [
         'uuid',
         'sku',
-        'propietario', // <--- 1. NUEVO CAMPO
+        'propietario',
         'id_area',
-        'nombre',
+        'id_categoria', // <--- 1. NUEVO CAMPO (Reemplaza la lógica de nombre)
+        // 'nombre',    <--- ELIMINADO
         'descripcion',
         'created_at',
         'updated_at',
@@ -31,20 +32,18 @@ class InventarioModel extends Model
     ];
 
     protected $validationRules = [
-        'nombre'      => 'required|max_length[255]',
-        'id_area'     => 'required|max_length[36]',
-        'sku'         => 'required|is_unique[inventario.sku,id,{id}]|max_length[50]', // Asumiendo que lo dejaste obligatorio
-        
-        // 2. NUEVA REGLA: Opcional y texto libre
-        'propietario' => 'permit_empty|max_length[255]', 
-        
-        'descripcion' => 'permit_empty',
+        // 'nombre' => ... ELIMINADO
+        'id_area'      => 'required|max_length[36]',
+        'id_categoria' => 'required|max_length[36]', // <--- 2. OBLIGATORIO
+        'sku'          => 'required|is_unique[inventario.sku,id,{id}]|max_length[50]',
+        'propietario'  => 'permit_empty|max_length[255]',
+        'descripcion'  => 'permit_empty',
     ];
 
     protected $validationMessages = [
-        'nombre'  => ['required' => 'El nombre es obligatorio.'],
-        'id_area' => ['required' => 'El UUID del área es obligatorio.'],
-        'sku'     => [
+        'id_area'      => ['required' => 'El UUID del área es obligatorio.'],
+        'id_categoria' => ['required' => 'El UUID de la categoría es obligatorio.'],
+        'sku'          => [
             'required'  => 'El SKU es obligatorio.',
             'is_unique' => 'Este SKU ya existe.'
         ]
@@ -66,8 +65,9 @@ class InventarioModel extends Model
         if (!$data) return null;
 
         $db = \Config\Database::connect();
+
+        // 1. Hidratar ÁREA (Traer nombre del área)
         $data['area'] = null;
-        
         if (!empty($data['id_area'])) {
             $area = $db->table('area')
                         ->select('uuid as id_area, nombre') 
@@ -75,8 +75,20 @@ class InventarioModel extends Model
                         ->get()->getRowArray();
             if ($area) $data['area'] = $area;
         }
+
+        // 2. Hidratar CATEGORÍA (Traer nombre de la categoría)
+        $data['categoria'] = null;
+        if (!empty($data['id_categoria'])) {
+            $cat = $db->table('categoria')
+                        ->select('uuid as id_categoria, nombre') 
+                        ->where('uuid', $data['id_categoria'])
+                        ->get()->getRowArray();
+            if ($cat) $data['categoria'] = $cat;
+        }
         
-        unset($data['id_area'], $data['updated_at'], $data['deleted_at'], $data['id']);
+        // Limpiamos los IDs internos para entregar un JSON limpio
+        unset($data['id_area'], $data['id_categoria'], $data['updated_at'], $data['deleted_at'], $data['id']);
+        
         return $data;
     }
 }
