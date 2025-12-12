@@ -17,142 +17,152 @@ class InventarioController extends ResourceController
 
     private InventarioModel $inventarioModel;
     private AreaModel $areaModel;
+    protected $db;
 
     public function initController(RequestInterface $request, ResponseInterface $response, LoggerInterface $logger)
     {
         parent::initController($request, $response, $logger);
+        $this->db = Database::connect();
         $this->inventarioModel = new InventarioModel();
         $this->areaModel = new AreaModel();
     }
 
     /**
-     * GET: Listar inventario con filtros
-     * Filtros disponibles: uuid (activo), id_area (área), nombre
+     * 📋 Listar inventario con MÚLTIPLES FILTROS y PAGINACIÓN (Estilo Notificaciones)
      */
     public function index()
     {
-        $size = max(1, (int) ($this->request->getGet("size") ?? 10));
-        $page = max(1, (int) ($this->request->getGet("page") ?? 1));
+        // --- 1. CONFIGURACIÓN DE PAGINACIÓN ---
+        $size = max(1, (int) ($this->request->getGet('size') ?? 10));
+        $page = max(1, (int) ($this->request->getGet('page') ?? 1));
 
-        // --- 1. CAPTURAR FILTROS ---
-        $uuid   = $this->request->getGet('uuid');    // Filtro por el UUID del activo
-        $idArea = $this->request->getGet('id_area'); // Filtro por el UUID del área
-       //$nombre = $this->request->getGet('nombre');  // Filtro por nombre (opcional)
+        // --- 2. CAPTURA DE VARIABLES (FILTROS) ---
+        $uuid   = $this->request->getGet('uuid');    // Filtro por Activo específico
+        $idArea = $this->request->getGet('id_area'); // Filtro por Área
+        $nombre = $this->request->getGet('nombre');  // Búsqueda por nombre
 
-        // Query Base
-        $query = $this->inventarioModel->select('uuid');
-        $query->where('deleted_at', 0); // Solo activos
+        // --- 3. CONSTRUCCIÓN DE LA CONSULTA ---
+        $query = $this->inventarioModel
+            ->select('uuid')
+            ->where('deleted_at', 0);
 
-        // --- 2. APLICAR FILTROS ---
-        
-        // Filtro por UUID del activo (búsqueda exacta)
+        // Aplicar filtros si existen
         if (!empty($uuid)) {
             $query->where('uuid', $uuid);
         }
-
-        // Filtro por UUID del Área (búsqueda exacta)
         if (!empty($idArea)) {
             $query->where('id_area', $idArea);
         }
-
-        // Filtro por Nombre (búsqueda parcial)
         if (!empty($nombre)) {
             $query->like('nombre', $nombre);
         }
 
-        $query->orderBy('id', 'DESC');
+        $query->orderBy('id', 'DESC'); // Ordenamos por el más reciente
 
-        // Ejecutamos paginación
+        // --- 4. EJECUTAR CONSULTA PAGINADA ---
         $result = $query->paginate($size, 'inventario', $page);
+        $pager  = $this->inventarioModel->pager;
 
-        // Hidratar datos (Traer la info completa + Área)
+        // --- 5. BUCLE DE PROCESAMIENTO (Hidratación) ---
         foreach ($result as &$item) {
-            $dataItem = $this->inventarioModel->findByUuid($item['uuid']);
-            $item = $dataItem ? $dataItem : null;
+            // Obtenemos el objeto completo con su relación (Area) usando tu modelo
+            $fullData = $this->inventarioModel->findByUuid($item['uuid']);
+
+            // Si falla la búsqueda, lo marcamos nulo para limpiarlo luego
+            if (!$fullData) {
+                $item = null;
+                continue;
+            }
+            $item = $fullData;
         }
-        $result = array_filter($result); // Limpiar nulos
 
-        // Respuesta LIMPIA (Sin pager)
-        $totalItems = $this->inventarioModel->pager->getTotal('inventario');
-        $message = ($totalItems === 0) ? 'No se encontraron resultados con los filtros aplicados.' : 'OK';
+        // Limpiamos nulos y reindexamos el array
+        $result = array_values(array_filter($result));
 
+        // --- 6. RESPUESTA JSON (Estructura idéntica a tu ejemplo) ---
         return $this->respond([
-            'status' => 200,
-            'message' => $message,
-            'data' => array_values($result),
+            'data'  => $result,
+            'pager' => [
+                'currentPage' => $pager->getCurrentPage('inventario'),
+                'totalPages'  => $pager->getPageCount('inventario'),
+                'totalItems'  => $pager->getTotal('inventario'),
+                'perPage'     => $size,
+            ]
         ]);
     }
 
     /**
-     * POST: Crear activo
-     * Requiere 'id_area' (UUID) obligatorio.
+     * ➕ Crear un activo (POST)
      */
     public function create()
     {
         $data = $this->request->getJSON(true) ?? [];
 
-        // 1. Generar UUID
-        $data['uuid'] = $data['uuid'] ?? Uuid::uuid4()->toString();
-
-        // 2. Validar que el Área exista (Integridad)
-        if (!empty($data['id_area'])) {
-            $existeArea = $this->areaModel->where('uuid', $data['id_area'])->first();
-            if (!$existeArea) {
-                return $this->failNotFound('El UUID del área no existe.');
-            }
-        } else {
-            return $this->failValidationErrors('El campo id_area es obligatorio.');
+        // Validaciones previas
+        if (empty($data['id_area'])) {
+            return $this->failValidationErrors('El id_area (UUID del área) es obligatorio.');
         }
 
-        // 3. Insertar
+        // Verificar que el Área existe
+        $existeArea = $this->areaModel->where('uuid', $data['id_area'])->first();
+        if (!$existeArea) {
+            return $this->failValidationErrors('El Área proporcionada no existe.');
+        }
+
+        // Preparar datos
+        $data['uuid'] = $data['uuid'] ?? Uuid::uuid4()->toString();
+        // deleted_at se maneja por defecto en 0 en la BD o Modelo
+
+        // Insertar
         if (!$this->inventarioModel->insert($data)) {
             return $this->failValidationErrors($this->inventarioModel->errors());
         }
 
-        // 4. Responder
+        // Recuperar el creado para retornarlo completo
+        $recienCreado = $this->inventarioModel->findByUuid($data['uuid']);
+
         return $this->respondCreated([
-            'message' => 'Activo creado correctamente',
-            'data' => $this->inventarioModel->findByUuid($data['uuid']),
+            'message' => 'Activo creado correctamente.',
+            'data'    => $recienCreado,
         ]);
     }
 
     /**
-     * GET: Ver un activo por UUID
+     * 🔍 Ver detalle (GET /uuid)
      */
     public function show($uuid = null)
     {
         if (empty($uuid)) return $this->failValidationErrors('UUID necesario.');
 
         $item = $this->inventarioModel->findByUuid($uuid);
-
+        
         if (!$item) {
-            return $this->failNotFound('Activo no encontrado');
+            return $this->failNotFound('Activo no encontrado.');
         }
 
         return $this->respond($item);
     }
 
     /**
-     * PUT/PATCH: Actualizar activo
+     * ✏️ Actualizar (PATCH /uuid)
      */
     public function update($uuid = null)
     {
         if (empty($uuid)) return $this->failValidationErrors('UUID necesario.');
 
-        // Buscamos ID interno para el update
+        // Buscamos el ID interno para el update
         $itemRaw = $this->inventarioModel->where('uuid', $uuid)->where('deleted_at', 0)->first();
-
+        
         if (!$itemRaw) {
-            return $this->failNotFound('Activo no encontrado');
+            return $this->failNotFound('Activo no encontrado.');
         }
 
-        $id = $itemRaw['id'];
         $data = $this->request->getJSON(true) ?? [];
+        
+        // Limpiar campos protegidos
+        unset($data['id'], $data['uuid'], $data['created_at']);
 
-        // Protección de campos
-        unset($data['uuid'], $data['id'], $data['created_at']);
-
-        // Validación de Área si intentan cambiarla
+        // Si intentan cambiar de área, validamos que la nueva exista
         if (array_key_exists('id_area', $data)) {
             if (empty($data['id_area'])) {
                 return $this->failValidationErrors('El área no puede quedar vacía.');
@@ -163,18 +173,19 @@ class InventarioController extends ResourceController
             }
         }
 
-        if (!$this->inventarioModel->update($id, $data)) {
+        // Actualizar
+        if (!$this->inventarioModel->update($itemRaw['id'], $data)) {
             return $this->failValidationErrors($this->inventarioModel->errors());
         }
 
         return $this->respond([
-            'message' => 'Activo actualizado correctamente',
-            'data' => $this->inventarioModel->findByUuid($uuid),
+            'message' => 'Activo actualizado correctamente.',
+            'data'    => $this->inventarioModel->findByUuid($uuid) // Retornamos el objeto actualizado
         ]);
     }
 
     /**
-     * DELETE: Borrado lógico (0 -> 1)
+     * 🗑️ Eliminar (DELETE /uuid)
      */
     public function delete($uuid = null)
     {
@@ -183,14 +194,12 @@ class InventarioController extends ResourceController
         $itemRaw = $this->inventarioModel->where('uuid', $uuid)->where('deleted_at', 0)->first();
 
         if (!$itemRaw) {
-            return $this->failNotFound('Activo no encontrado');
+            return $this->failNotFound('Activo no encontrado.');
         }
 
-        // Actualizamos deleted_at a 1
+        // Borrado lógico
         $this->inventarioModel->update($itemRaw['id'], ['deleted_at' => 1]);
 
-        return $this->respondDeleted([
-            'message' => 'Activo eliminado correctamente',
-        ]);
+        return $this->respondDeleted(['message' => 'Activo eliminado correctamente.']);
     }
 }

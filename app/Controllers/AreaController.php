@@ -32,23 +32,19 @@ class AreaController extends ResourceController
 
         // 2. Capturar Filtros
         $uuid   = $this->request->getGet('uuid');   // Para búsqueda exacta
-        $nombre = $this->request->getGet('nombre'); // Para búsqueda por nombre (ej: "Sist")
+        $nombre = $this->request->getGet('nombre'); // Para búsqueda por nombre
 
         // 3. Construir Query Base
-        // Seleccionamos solo lo que nos interesa mostrar
         $query = $this->areaModel->select('uuid, nombre, created_at, updated_at');
         
-        // Filtro base: Solo áreas activas (deleted_at = 0)
+        // Filtro base: Solo áreas activas
         $query->where('deleted_at', 0);
 
         // --- APLICAR FILTROS OPCIONALES ---
-        
-        // Filtro por UUID (Exacto)
         if (!empty($uuid)) {
             $query->where('uuid', $uuid);
         }
 
-        // Filtro por Nombre (Parcial - LIKE)
         if (!empty($nombre)) {
             $query->like('nombre', $nombre);
         }
@@ -58,14 +54,27 @@ class AreaController extends ResourceController
         // 4. Ejecutar con Paginación
         $result = $query->paginate($size, 'area', $page);
 
-        // 5. Respuesta
-        $totalItems = $this->areaModel->pager->getTotal('area');
+        // 5. Preparar Pager (Metadatos de paginación)
+        $pager = $this->areaModel->pager;
+        $totalItems = $pager->getTotal('area');
+        
         $message = ($totalItems === 0) ? 'No se encontraron áreas con esos criterios.' : 'OK';
 
+        // 6. Respuesta Final (Con Pager incluido)
         return $this->respond([
             'status'  => 200,
             'message' => $message,
             'data'    => $result,
+            
+            // AQUÍ AGREGAMOS LA PAGINACIÓN
+            'pager' => [
+                'currentPage' => $pager->getCurrentPage('area'),
+                'totalPages'  => $pager->getPageCount('area'),
+                'totalItems'  => $totalItems,
+                'perPage'     => $size,
+                'next'        => $pager->getNextPageURI('area'),
+                'previous'    => $pager->getPreviousPageURI('area'),
+            ],
         ]);
     }
 
@@ -83,7 +92,6 @@ class AreaController extends ResourceController
             return $this->failValidationErrors($this->areaModel->errors());
         }
 
-        // Recuperamos por UUID para mostrarlo limpio
         return $this->respondCreated([
             'message' => 'Área creada correctamente.',
             'data' => $this->areaModel->findByUuid($data['uuid'])
@@ -118,7 +126,7 @@ class AreaController extends ResourceController
             return $this->failValidationErrors('UUID necesario.');
         }
 
-        $row = $this->areaModel->findByUuid($uuid); // Usamos findByUuid que ya filtra deleted_at=0
+        $row = $this->areaModel->findByUuid($uuid);
         
         if (!$row) {
             return $this->failNotFound('Área no encontrada o inactiva.');
@@ -126,12 +134,9 @@ class AreaController extends ResourceController
 
         $data = $this->request->getJSON(true) ?? [];
         
-        // Protección: No permitimos cambiar ID, UUID ni fecha de creación
         unset($data['id'], $data['uuid'], $data['deleted_at'], $data['created_at']);
 
-        // Necesitamos el ID interno para el update
-        // Como $row viene de findByUuid (que limpia el ID), hacemos una búsqueda rápida raw si es necesario,
-        // o ajustamos el modelo. Asumiendo que findByUuid limpia el ID, hacemos esto:
+        // Buscamos ID interno para actualizar
         $areaRaw = $this->areaModel->where('uuid', $uuid)->first(); 
 
         if (!$this->areaModel->update($areaRaw['id'], $data)) {
@@ -146,7 +151,6 @@ class AreaController extends ResourceController
 
     /**
      * DELETE /api/v1/area/{uuid}
-     * Borrado lógico (deleted_at = 1)
      */
     public function delete($uuid = null)
     {
@@ -154,7 +158,6 @@ class AreaController extends ResourceController
             return $this->failValidationErrors('UUID necesario.');
         }
 
-        // Buscamos el registro raw para tener el ID
         $row = $this->areaModel->where('uuid', $uuid)->where('deleted_at', 0)->first();
         
         if (!$row) {
