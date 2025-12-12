@@ -114,15 +114,13 @@ class InventarioController extends ResourceController
             return $this->failValidationErrors('Categoría no existe.');
         }
 
-        $data['uuid'] = $data['uuid'] ?? Uuid::uuid4()->toString();
-
         if (!$this->inventarioModel->insert($data)) {
             return $this->failValidationErrors($this->inventarioModel->errors());
         }
 
         return $this->respondCreated([
             'message' => 'Creado correctamente',
-            'data'    => $this->inventarioModel->findByUuid($data['uuid'])
+            'data'    => $this->inventarioModel->find($this->inventarioModel->getInsertID())
         ]);
     }
 

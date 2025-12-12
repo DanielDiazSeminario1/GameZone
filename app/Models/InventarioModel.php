@@ -11,7 +11,7 @@ class InventarioModel extends Model
     protected $primaryKey       = 'id';
     protected $useAutoIncrement = true;
     protected $returnType       = 'array';
-    protected $useSoftDeletes   = false; 
+    protected $useSoftDeletes   = false;
     protected $protectFields    = true;
 
     protected $useTimestamps    = true;
@@ -23,8 +23,8 @@ class InventarioModel extends Model
         'sku',
         'propietario',
         'id_area',
-        'id_categoria', // <--- 1. NUEVO CAMPO (Reemplaza la lógica de nombre)
-        // 'nombre',    <--- ELIMINADO
+        'id_categoria',
+        'serie',
         'descripcion',
         'created_at',
         'updated_at',
@@ -36,16 +36,22 @@ class InventarioModel extends Model
         'id_area'      => 'required|max_length[36]',
         'id_categoria' => 'required|max_length[36]', // <--- 2. OBLIGATORIO
         'sku'          => 'required|is_unique[inventario.sku,id,{id}]|max_length[50]',
-        'propietario'  => 'permit_empty|max_length[255]',
+        'serie'          => 'required|is_unique[inventario.serie,id,{id}]|max_length[50]',
+        'propietario'  => 'required|max_length[255]',
         'descripcion'  => 'permit_empty',
     ];
 
     protected $validationMessages = [
         'id_area'      => ['required' => 'El UUID del área es obligatorio.'],
+        'propietario'      => ['required' => 'El propietario es obligatorio.'],
         'id_categoria' => ['required' => 'El UUID de la categoría es obligatorio.'],
         'sku'          => [
             'required'  => 'El SKU es obligatorio.',
             'is_unique' => 'Este SKU ya existe.'
+        ],
+        'serie'          => [
+            'required'  => 'La serie es obligatorio.',
+            'is_unique' => 'Esta serie ya existe.'
         ]
     ];
 
@@ -70,9 +76,9 @@ class InventarioModel extends Model
         $data['area'] = null;
         if (!empty($data['id_area'])) {
             $area = $db->table('area')
-                        ->select('uuid as id_area, nombre') 
-                        ->where('uuid', $data['id_area'])
-                        ->get()->getRowArray();
+                ->select('uuid as id_area, nombre')
+                ->where('uuid', $data['id_area'])
+                ->get()->getRowArray();
             if ($area) $data['area'] = $area;
         }
 
@@ -80,15 +86,15 @@ class InventarioModel extends Model
         $data['categoria'] = null;
         if (!empty($data['id_categoria'])) {
             $cat = $db->table('categoria')
-                        ->select('uuid as id_categoria, nombre') 
-                        ->where('uuid', $data['id_categoria'])
-                        ->get()->getRowArray();
+                ->select('uuid as id_categoria, nombre')
+                ->where('uuid', $data['id_categoria'])
+                ->get()->getRowArray();
             if ($cat) $data['categoria'] = $cat;
         }
-        
+
         // Limpiamos los IDs internos para entregar un JSON limpio
         unset($data['id_area'], $data['id_categoria'], $data['updated_at'], $data['deleted_at'], $data['id']);
-        
+
         return $data;
     }
 }

@@ -85,9 +85,13 @@ class CategoriaController extends ResourceController
     public function create()
     {
         $data = $this->request->getJSON(true) ?? [];
-        
-        // Generamos UUID aquí por seguridad aunque el modelo lo tenga
-        $data['uuid'] = $data['uuid'] ?? Uuid::uuid4()->toString();
+
+        //ver si ya existe
+        $existe = $this->categoriaModel
+            ->select('nombre')
+            ->where('nombre', $data['nombre']);
+
+        if ($existe) return $this->failValidationErrors('Esa categoria ya esta registrada.');
 
         if (!$this->categoriaModel->insert($data)) {
             return $this->failValidationErrors($this->categoriaModel->errors());
@@ -95,7 +99,7 @@ class CategoriaController extends ResourceController
 
         return $this->respondCreated([
             'message' => 'Creado correctamente',
-            'data'    => $this->categoriaModel->findByUuid($data['uuid'])
+            'data'    => $this->categoriaModel->find($this->categoriaModel->getInsertID())
         ]);
     }
 
@@ -115,7 +119,7 @@ class CategoriaController extends ResourceController
     public function update($uuid = null)
     {
         if (empty($uuid)) return $this->failValidationErrors('UUID necesario.');
-        
+
         $itemRaw = $this->categoriaModel->where('uuid', $uuid)->where('deleted_at', 0)->first();
         if (!$itemRaw) return $this->failNotFound('No encontrado');
 
@@ -138,7 +142,7 @@ class CategoriaController extends ResourceController
     public function delete($uuid = null)
     {
         if (empty($uuid)) return $this->failValidationErrors('UUID necesario.');
-        
+
         $itemRaw = $this->categoriaModel->where('uuid', $uuid)->where('deleted_at', 0)->first();
         if (!$itemRaw) return $this->failNotFound('No encontrado');
 
