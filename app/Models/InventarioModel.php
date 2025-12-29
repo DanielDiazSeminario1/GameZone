@@ -7,9 +7,15 @@ use Ramsey\Uuid\Uuid;
 
 class InventarioModel extends Model
 {
+    // 1. Tabla verificada en tu DB local
     protected $table            = 'inventario';
-    protected $primaryKey       = 'id';
-    protected $useAutoIncrement = true;
+    
+    // 2. Llave Primaria
+    protected $primaryKey       = 'sku';
+    
+    // 3. SKU es manual
+    protected $useAutoIncrement = false; 
+    
     protected $returnType       = 'array';
     protected $useSoftDeletes   = false;
     protected $protectFields    = true;
@@ -18,40 +24,28 @@ class InventarioModel extends Model
     protected $createdField     = 'created_at';
     protected $updatedField     = 'updated_at';
 
+    // AJUSTADO: Solo columnas que existen en tu tabla física
     public $allowedFields = [
         'uuid',
         'sku',
-        'propietario',
-        'id_area',
-        'id_categoria',
-        'serie',
-        'descripcion',
+        'nombre',
+        'ubicacion_nombre',
         'created_at',
         'updated_at',
         'deleted_at'
     ];
 
+    // AJUSTADO: Se eliminaron reglas de campos inexistentes (series, propietario, etc.)
     protected $validationRules = [
-        // 'nombre' => ... ELIMINADO
-        'id_area'      => 'required|max_length[36]',
-        'id_categoria' => 'required|max_length[36]', // <--- 2. OBLIGATORIO
-        'sku'          => 'required|is_unique[inventario.sku,id,{id}]|max_length[50]',
-        'serie'          => 'required|is_unique[inventario.serie,id,{id}]|max_length[50]',
-        'propietario'  => 'required|max_length[255]',
-        'descripcion'  => 'permit_empty',
+        'sku'    => 'required|is_unique[inventario_qr.sku]|max_length[50]',
+        'nombre' => 'required|max_length[255]',
     ];
 
     protected $validationMessages = [
-        'id_area'      => ['required' => 'El UUID del área es obligatorio.'],
-        'propietario'      => ['required' => 'El propietario es obligatorio.'],
-        'id_categoria' => ['required' => 'El UUID de la categoría es obligatorio.'],
-        'sku'          => [
+        'nombre' => ['required' => 'El nombre del equipo es obligatorio.'],
+        'sku'    => [
             'required'  => 'El SKU es obligatorio.',
             'is_unique' => 'Este SKU ya existe.'
-        ],
-        'serie'          => [
-            'required'  => 'La serie es obligatorio.',
-            'is_unique' => 'Esta serie ya existe.'
         ]
     ];
 
@@ -64,7 +58,9 @@ class InventarioModel extends Model
         }
         return $data;
     }
-
+    /**
+     * 🔍 Buscar por UUID
+     */
     public function findByUuid(string $uuid): ?array
     {
         $data = $this->where('uuid', $uuid)->where('deleted_at', 0)->first();

@@ -60,7 +60,7 @@ class Productos extends ResourceController
         if ($filtro_year) {
             $this->model->where('series.anio_lanzamiento >=', $filtro_year);
         }
-
+        
         // 6. APLICAR FILTRO GENÉRICO ('q')
         if ($busqueda) {
             $this->model->groupStart()
