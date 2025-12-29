@@ -17,6 +17,7 @@ $routes->group('api/v1', ['namespace' => 'App\Controllers'], function ($routes) 
     $routes->group('inventario', static function ($routes) {
         $routes->get('', 'InventarioController::index');
         $routes->post('', 'InventarioController::create');
+        $routes->get('sku/(:any)', 'InventarioController::showsku/$1');
         $routes->get('(:any)', 'InventarioController::show/$1');
         $routes->patch('(:any)', 'InventarioController::update/$1');
         $routes->delete('(:any)', 'InventarioController::delete/$1');

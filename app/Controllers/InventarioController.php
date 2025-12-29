@@ -99,7 +99,7 @@ class InventarioController extends ResourceController
     public function create()
     {
         $data = $this->request->getJSON(true) ?? [];
-        
+
         // Validaciones Manuales de Integridad
         if (empty($data['id_area'])) return $this->failValidationErrors('id_area obligatorio.');
         if (empty($data['id_categoria'])) return $this->failValidationErrors('id_categoria obligatorio.'); // <--- Validar input
@@ -113,6 +113,15 @@ class InventarioController extends ResourceController
         if (!$this->categoriaModel->where('uuid', $data['id_categoria'])->first()) {
             return $this->failValidationErrors('Categoría no existe.');
         }
+
+        // Verificar existencia de Sku
+        if (!$this->inventarioModel
+            ->where('sku', $data['sku'])
+            ->where('deleted_at', 0)
+            ->first()) {
+            return $this->failValidationErrors('el sku ingresado ya existe.');
+        }
+
 
         if (!$this->inventarioModel->insert($data)) {
             return $this->failValidationErrors($this->inventarioModel->errors());
@@ -131,7 +140,17 @@ class InventarioController extends ResourceController
     {
         if (empty($uuid)) return $this->failValidationErrors('UUID necesario.');
         $item = $this->inventarioModel->findByUuid($uuid);
-        return $item ? $this->respond($item) : $this->failNotFound('No encontrado');
+        return $item ? $this->respond($item) : $this->failNotFound('No encontradoasdas');
+    }
+
+    public function showsku($sku)
+    {
+        if (empty($sku)) return $this->failValidationErrors('SKU necesario');
+        $data = $this->inventarioModel
+            ->where('deleted_at', 0)
+            ->first();
+        $item = $this->inventarioModel->findByUuid($data['uuid']);
+        return $item ? $this->respond($item) : $this->failNotFound('No encontradoasdas');
     }
 
     /**
@@ -140,7 +159,7 @@ class InventarioController extends ResourceController
     public function update($uuid = null)
     {
         if (empty($uuid)) return $this->failValidationErrors('UUID necesario.');
-        
+
         $itemRaw = $this->inventarioModel->where('uuid', $uuid)->where('deleted_at', 0)->first();
         if (!$itemRaw) return $this->failNotFound('No encontrado');
 
@@ -178,7 +197,7 @@ class InventarioController extends ResourceController
     public function delete($uuid = null)
     {
         if (empty($uuid)) return $this->failValidationErrors('UUID necesario.');
-        
+
         $itemRaw = $this->inventarioModel->where('uuid', $uuid)->where('deleted_at', 0)->first();
         if (!$itemRaw) return $this->failNotFound('No encontrado');
 

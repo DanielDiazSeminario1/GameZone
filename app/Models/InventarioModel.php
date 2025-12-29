@@ -73,7 +73,7 @@ class InventarioModel extends Model
         $db = \Config\Database::connect();
 
         // 1. Hidratar ÁREA (Traer nombre del área)
-        $data['area'] = null;
+        $data['area'] = null;   
         if (!empty($data['id_area'])) {
             $area = $db->table('area')
                 ->select('uuid as id_area, nombre')
@@ -97,4 +97,5 @@ class InventarioModel extends Model
 
         return $data;
     }
+    
 }
