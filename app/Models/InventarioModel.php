@@ -18,27 +18,30 @@ class InventarioModel extends Model
     protected $createdField     = 'created_at';
     protected $updatedField     = 'updated_at';
 
-    // CORRECCIÓN: Se agregaron id_area e id_categoria para que la hidratación funcione
+    // AJUSTADO: Solo las columnas que existen en tu tabla física (image_95ffad.png)
     public $allowedFields = [
         'uuid',
         'sku',
-        'nombre',
-        'ubicacion_nombre',
         'id_area',      
         'id_categoria', 
+        'propietario',
+        'serie',
+        'descripcion',
         'created_at',
         'updated_at',
         'deleted_at'
     ];
 
+    // CORRECCIÓN ERROR 500: Se eliminó el placeholder {sku} que causaba conflicto
+    // CORRECCIÓN ERROR 400: Se eliminó 'nombre' porque la tabla no lo tiene
     protected $validationRules = [
-        'sku'    => 'required|is_unique[inventario.sku]|max_length[50]',
-        'nombre' => 'required|max_length[255]',
+        'sku'          => 'required|is_unique[inventario.sku,sku,sku]|max_length[50]',
+        'id_area'      => 'required',
+        'id_categoria' => 'required',
     ];
 
     protected $validationMessages = [
-        'nombre' => ['required' => 'El nombre del equipo es obligatorio.'],
-        'sku'    => [
+        'sku' => [
             'required'  => 'El SKU es obligatorio.',
             'is_unique' => 'Este SKU ya existe.'
         ]
@@ -55,19 +58,18 @@ class InventarioModel extends Model
     }
 
     /**
-     * 🔍 Buscar por SKU (Nueva función para tu eje principal)
+     * 🔍 Buscar por SKU
      */
     public function findBySku(string $sku): ?array
     {
         $data = $this->where('sku', $sku)->where('deleted_at', 0)->first();
         if (!$data) return null;
 
-        // Reutilizamos la lógica de hidratación usando el uuid encontrado
         return $this->findByUuid($data['uuid']);
     }
 
     /**
-     * 🔍 Buscar por UUID e Hidratar Objetos
+     * 🔍 Buscar por UUID e Hidratar Objetos (Area y Categoría)
      */
     public function findByUuid(string $uuid): ?array
     {
@@ -76,33 +78,29 @@ class InventarioModel extends Model
 
         $db = \Config\Database::connect();
 
-        // 1. Hidratar ÁREA (Convertir en Objeto)
+        // 1. Hidratar ÁREA (Para mostrar objeto con nombre)
         $data['area'] = null;   
         if (!empty($data['id_area'])) {
             $area = $db->table('area')
                 ->select('uuid as id_area, nombre')
                 ->where('uuid', $data['id_area'])
                 ->get()->getRowArray();
-            
-            // CORRECCIÓN: Asignamos el resultado directamente
             if ($area) $data['area'] = $area;
         }
 
-        // 2. Hidratar CATEGORÍA (Convertir en Objeto)
+        // 2. Hidratar CATEGORÍA (Para mostrar objeto con nombre)
         $data['categoria'] = null;
         if (!empty($data['id_categoria'])) {
             $cat = $db->table('categoria')
                 ->select('uuid as id_categoria, nombre')
                 ->where('uuid', $data['id_categoria'])
                 ->get()->getRowArray();
-            
-            // CORRECCIÓN: Asignamos el resultado directamente
             if ($cat) $data['categoria'] = $cat;
         }
         
-        // 3. Limpieza de IDs planos y campos técnicos para el JSON final
+        // Limpieza de campos técnicos
         unset($data['id_area'], $data['id_categoria'], $data['updated_at'], $data['deleted_at'], $data['id']);
 
         return $data;
     }
-}
+}   

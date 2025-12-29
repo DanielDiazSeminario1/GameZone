@@ -28,37 +28,31 @@ class InventarioController extends ResourceController
         $this->categoriaModel = new CategoriaModel();
     }
 
-    /**
-     * 📋 Listar (GET) - Ahora con hidratación de objetos
-     */
     public function index()
     {
         $size = max(1, (int) ($this->request->getGet('size') ?? 10));
         $page = max(1, (int) ($this->request->getGet('page') ?? 1));
         $offset = ($page - 1) * $size;
-        //filtros
+
         $sku         = $this->request->getGet('sku');
         $propietario = $this->request->getGet('propietario');
-        $idarea = $this->request->getGet('id_area'); //agregar filtro por area
-        $idcategoria = $this->request->getGet('id_categoria'); //agregar filtro por categoria
+        $idarea      = $this->request->getGet('id_area'); 
+        $idcategoria = $this->request->getGet('id_categoria'); 
 
         $builder = $this->inventarioModel->builder();
         $builder->select('sku')->where('deleted_at', 0);
 
         if (!empty($sku))         $builder->where('sku', $sku);
         if (!empty($propietario)) $builder->like('propietario', $propietario);
-
-        //filtros de area y categoria
-        if (!empty($idarea)) $builder->where('id_area', $idarea);
+        if (!empty($idarea))      $builder->where('id_area', $idarea);
         if (!empty($idcategoria)) $builder->where('id_categoria', $idcategoria);
-        //clonamos para contar el total antes de paginar    
+
         $countBuilder = clone $builder;
-        $totalItems = $countBuilder->countAllResults();
+        $totalItems = $countBuilder->countAllResults(false);
 
         $builder->orderBy('sku', 'ASC'); 
         $result = $builder->get($size, $offset)->getResultArray();
 
-        // CORRECCIÓN: Hidratamos cada item usando findBySku para obtener los objetos area/categoria
         foreach ($result as &$item) {
             $item = $this->inventarioModel->findBySku($item['sku']); 
         }
@@ -76,9 +70,6 @@ class InventarioController extends ResourceController
         ]);
     }
 
-    /**
-     * ➕ Crear (POST)
-     */
     public function create()
     {
         $data = $this->request->getJSON(true) ?? [];
@@ -94,7 +85,6 @@ class InventarioController extends ResourceController
             return $this->failValidationErrors('Categoría no existe.');
         }
 
-        // CORRECCIÓN: La lógica estaba invertida. Si existe (first != null), error.
         if ($this->inventarioModel->where('sku', $data['sku'])->where('deleted_at', 0)->first()) {
             return $this->failValidationErrors('El SKU ingresado ya existe.');
         }
@@ -110,33 +100,31 @@ class InventarioController extends ResourceController
     }
 
     /**
-     * 🔍 Ver detalle (GET /sku)
+     * 🔍 Ver detalle por UUID (GET /inventario/{uuid})
      */
-    public function show($sku = null)
+    public function show($uuid = null)
     {
-        if (empty($sku)) return $this->failValidationErrors('SKU necesario.');
+        if (empty($uuid)) return $this->failValidationErrors('UUID necesario.');
         
-        // CORRECCIÓN: Usamos findBySku que ya devuelve el objeto hidratado
-        $item = $this->inventarioModel->findBySku($sku);
+        // CORRECCIÓN: Para el endpoint "BY ID" usamos findByUuid
+        $item = $this->inventarioModel->findByUuid($uuid);
         return $item ? $this->respond($item) : $this->failNotFound('No encontrado');
     }
 
     /**
-     * Endpoint alternativo para buscar por SKU
+     * 🔍 Ver detalle por SKU (GET /inventario/sku/{sku})
      */
     public function showsku($sku = null)
     {
-        return $this->show($sku);
+        if (empty($sku)) return $this->failValidationErrors('SKU necesario');
+        $item = $this->inventarioModel->findBySku($sku);
+        return $item ? $this->respond($item) : $this->failNotFound('No encontrado');
     }
 
-    /**
-     * ✏️ Actualizar (PATCH /sku)
-     */
     public function update($sku = null)
     {
         if (empty($sku)) return $this->failValidationErrors('SKU necesario.');
 
-        // CORRECCIÓN: Buscamos por SKU, no por UUID inexistente
         $itemRaw = $this->inventarioModel->where('sku', $sku)->where('deleted_at', 0)->first();
         if (!$itemRaw) return $this->failNotFound('No encontrado');
 
@@ -153,14 +141,10 @@ class InventarioController extends ResourceController
         ]);
     }
 
-    /**
-     * 🗑️ Eliminar (DELETE /sku)
-     */
     public function delete($sku = null)
     {
         if (empty($sku)) return $this->failValidationErrors('SKU necesario.');
 
-        // CORRECCIÓN: Buscamos por SKU para verificar existencia
         $itemRaw = $this->inventarioModel->where('sku', $sku)->where('deleted_at', 0)->first();
         if (!$itemRaw) return $this->failNotFound('No encontrado');
 
