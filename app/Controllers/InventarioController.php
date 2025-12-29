@@ -29,35 +29,38 @@ class InventarioController extends ResourceController
     }
 
     /**
-     * 📋 Listar (GET) - Filtro por SKU incluido
+     * 📋 Listar (GET) - Ahora con hidratación de objetos
      */
     public function index()
     {
         $size = max(1, (int) ($this->request->getGet('size') ?? 10));
         $page = max(1, (int) ($this->request->getGet('page') ?? 1));
         $offset = ($page - 1) * $size;
-
-        // Filtros (Se eliminaron id_area e id_categoria)
-        $sku         = $this->request->getGet('sku'); // <--- Filtro por SKU (Llave Primaria)
+        //filtros
+        $sku         = $this->request->getGet('sku');
         $propietario = $this->request->getGet('propietario');
+        $idarea = $this->request->getGet('id_area'); //agregar filtro por area
+        $idcategoria = $this->request->getGet('id_categoria'); //agregar filtro por categoria
 
         $builder = $this->inventarioModel->builder();
         $builder->select('sku')->where('deleted_at', 0);
 
-        // Aplicar Filtros
         if (!empty($sku))         $builder->where('sku', $sku);
         if (!empty($propietario)) $builder->like('propietario', $propietario);
 
+        //filtros de area y categoria
+        if (!empty($idarea)) $builder->where('id_area', $idarea);
+        if (!empty($idcategoria)) $builder->where('id_categoria', $idcategoria);
+        //clonamos para contar el total antes de paginar    
         $countBuilder = clone $builder;
         $totalItems = $countBuilder->countAllResults();
 
         $builder->orderBy('sku', 'ASC'); 
         $result = $builder->get($size, $offset)->getResultArray();
 
-        // Hidratar (Buscamos por SKU)
+        // CORRECCIÓN: Hidratamos cada item usando findBySku para obtener los objetos area/categoria
         foreach ($result as &$item) {
-            $fullData = $this->inventarioModel->find($item['sku']); 
-            $item = $fullData ? $fullData : null;
+            $item = $this->inventarioModel->findBySku($item['sku']); 
         }
         $result = array_values(array_filter($result));
 
@@ -74,34 +77,27 @@ class InventarioController extends ResourceController
     }
 
     /**
-     * ➕ Crear (POST) - Validación de SKU Manual y No Repetido
+     * ➕ Crear (POST)
      */
     public function create()
     {
         $data = $this->request->getJSON(true) ?? [];
 
-        // Validaciones Manuales de Integridad
         if (empty($data['id_area'])) return $this->failValidationErrors('id_area obligatorio.');
-        if (empty($data['id_categoria'])) return $this->failValidationErrors('id_categoria obligatorio.'); // <--- Validar input
+        if (empty($data['id_categoria'])) return $this->failValidationErrors('id_categoria obligatorio.');
 
-        // Verificar existencia de Área
         if (!$this->areaModel->where('uuid', $data['id_area'])->first()) {
             return $this->failValidationErrors('Área no existe.');
         }
 
-        // Verificar existencia de Categoría
         if (!$this->categoriaModel->where('uuid', $data['id_categoria'])->first()) {
             return $this->failValidationErrors('Categoría no existe.');
         }
 
-        // Verificar existencia de Sku
-        if (!$this->inventarioModel
-            ->where('sku', $data['sku'])
-            ->where('deleted_at', 0)
-            ->first()) {
-            return $this->failValidationErrors('el sku ingresado ya existe.');
+        // CORRECCIÓN: La lógica estaba invertida. Si existe (first != null), error.
+        if ($this->inventarioModel->where('sku', $data['sku'])->where('deleted_at', 0)->first()) {
+            return $this->failValidationErrors('El SKU ingresado ya existe.');
         }
-
 
         if (!$this->inventarioModel->insert($data)) {
             return $this->failValidationErrors($this->inventarioModel->errors());
@@ -109,7 +105,7 @@ class InventarioController extends ResourceController
 
         return $this->respondCreated([
             'message' => 'Creado correctamente',
-            'data'    => $this->inventarioModel->find($data['sku'])
+            'data'    => $this->inventarioModel->findBySku($data['sku'])
         ]);
     }
 
@@ -118,19 +114,19 @@ class InventarioController extends ResourceController
      */
     public function show($sku = null)
     {
-        if (empty($uuid)) return $this->failValidationErrors('UUID necesario.');
-        $item = $this->inventarioModel->findByUuid($uuid);
-        return $item ? $this->respond($item) : $this->failNotFound('No encontradoasdas');
+        if (empty($sku)) return $this->failValidationErrors('SKU necesario.');
+        
+        // CORRECCIÓN: Usamos findBySku que ya devuelve el objeto hidratado
+        $item = $this->inventarioModel->findBySku($sku);
+        return $item ? $this->respond($item) : $this->failNotFound('No encontrado');
     }
 
-    public function showsku($sku)
+    /**
+     * Endpoint alternativo para buscar por SKU
+     */
+    public function showsku($sku = null)
     {
-        if (empty($sku)) return $this->failValidationErrors('SKU necesario');
-        $data = $this->inventarioModel
-            ->where('deleted_at', 0)
-            ->first();
-        $item = $this->inventarioModel->findByUuid($data['uuid']);
-        return $item ? $this->respond($item) : $this->failNotFound('No encontradoasdas');
+        return $this->show($sku);
     }
 
     /**
@@ -138,17 +134,14 @@ class InventarioController extends ResourceController
      */
     public function update($sku = null)
     {
-        if (empty($uuid)) return $this->failValidationErrors('UUID necesario.');
+        if (empty($sku)) return $this->failValidationErrors('SKU necesario.');
 
-        $itemRaw = $this->inventarioModel->where('uuid', $uuid)->where('deleted_at', 0)->first();
+        // CORRECCIÓN: Buscamos por SKU, no por UUID inexistente
+        $itemRaw = $this->inventarioModel->where('sku', $sku)->where('deleted_at', 0)->first();
         if (!$itemRaw) return $this->failNotFound('No encontrado');
 
         $data = $this->request->getJSON(true) ?? [];
-        
-        // Protegemos la llave primaria y campos críticos
         unset($data['sku'], $data['uuid'], $data['created_at']);
-
-        // Se eliminó la validación de cambio de Área/Categoría
 
         if (!$this->inventarioModel->update($sku, $data)) {
             return $this->failValidationErrors($this->inventarioModel->errors());
@@ -156,7 +149,7 @@ class InventarioController extends ResourceController
 
         return $this->respond([
             'message' => 'Actualizado correctamente',
-            'data'    => $this->inventarioModel->find($sku)
+            'data'    => $this->inventarioModel->findBySku($sku)
         ]);
     }
 
@@ -165,12 +158,12 @@ class InventarioController extends ResourceController
      */
     public function delete($sku = null)
     {
-        if (empty($uuid)) return $this->failValidationErrors('UUID necesario.');
+        if (empty($sku)) return $this->failValidationErrors('SKU necesario.');
 
-        $itemRaw = $this->inventarioModel->where('uuid', $uuid)->where('deleted_at', 0)->first();
+        // CORRECCIÓN: Buscamos por SKU para verificar existencia
+        $itemRaw = $this->inventarioModel->where('sku', $sku)->where('deleted_at', 0)->first();
         if (!$itemRaw) return $this->failNotFound('No encontrado');
 
-        // Soft-delete usando el SKU como referencia
         $this->inventarioModel->update($sku, ['deleted_at' => 1]);
 
         return $this->respondDeleted(['message' => 'Eliminado correctamente']);

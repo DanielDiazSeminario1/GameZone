@@ -7,15 +7,9 @@ use Ramsey\Uuid\Uuid;
 
 class InventarioModel extends Model
 {
-    // 1. Tabla verificada en tu DB local
     protected $table            = 'inventario';
-    
-    // 2. Llave Primaria
     protected $primaryKey       = 'sku';
-    
-    // 3. SKU es manual
     protected $useAutoIncrement = false; 
-    
     protected $returnType       = 'array';
     protected $useSoftDeletes   = false;
     protected $protectFields    = true;
@@ -24,20 +18,21 @@ class InventarioModel extends Model
     protected $createdField     = 'created_at';
     protected $updatedField     = 'updated_at';
 
-    // AJUSTADO: Solo columnas que existen en tu tabla física
+    // CORRECCIÓN: Se agregaron id_area e id_categoria para que la hidratación funcione
     public $allowedFields = [
         'uuid',
         'sku',
         'nombre',
         'ubicacion_nombre',
+        'id_area',      
+        'id_categoria', 
         'created_at',
         'updated_at',
         'deleted_at'
     ];
 
-    // AJUSTADO: Se eliminaron reglas de campos inexistentes (series, propietario, etc.)
     protected $validationRules = [
-        'sku'    => 'required|is_unique[inventario_qr.sku]|max_length[50]',
+        'sku'    => 'required|is_unique[inventario.sku]|max_length[50]',
         'nombre' => 'required|max_length[255]',
     ];
 
@@ -58,8 +53,21 @@ class InventarioModel extends Model
         }
         return $data;
     }
+
     /**
-     * 🔍 Buscar por UUID
+     * 🔍 Buscar por SKU (Nueva función para tu eje principal)
+     */
+    public function findBySku(string $sku): ?array
+    {
+        $data = $this->where('sku', $sku)->where('deleted_at', 0)->first();
+        if (!$data) return null;
+
+        // Reutilizamos la lógica de hidratación usando el uuid encontrado
+        return $this->findByUuid($data['uuid']);
+    }
+
+    /**
+     * 🔍 Buscar por UUID e Hidratar Objetos
      */
     public function findByUuid(string $uuid): ?array
     {
@@ -68,30 +76,33 @@ class InventarioModel extends Model
 
         $db = \Config\Database::connect();
 
-        // 1. Hidratar ÁREA (Traer nombre del área)
+        // 1. Hidratar ÁREA (Convertir en Objeto)
         $data['area'] = null;   
         if (!empty($data['id_area'])) {
             $area = $db->table('area')
                 ->select('uuid as id_area, nombre')
                 ->where('uuid', $data['id_area'])
                 ->get()->getRowArray();
+            
+            // CORRECCIÓN: Asignamos el resultado directamente
             if ($area) $data['area'] = $area;
         }
 
-        // 2. Hidratar CATEGORÍA (Traer nombre de la categoría)
+        // 2. Hidratar CATEGORÍA (Convertir en Objeto)
         $data['categoria'] = null;
         if (!empty($data['id_categoria'])) {
             $cat = $db->table('categoria')
                 ->select('uuid as id_categoria, nombre')
                 ->where('uuid', $data['id_categoria'])
                 ->get()->getRowArray();
+            
+            // CORRECCIÓN: Asignamos el resultado directamente
             if ($cat) $data['categoria'] = $cat;
         }
-
-        // Limpiamos los IDs internos para entregar un JSON limpio
+        
+        // 3. Limpieza de IDs planos y campos técnicos para el JSON final
         unset($data['id_area'], $data['id_categoria'], $data['updated_at'], $data['deleted_at'], $data['id']);
 
         return $data;
     }
-    
 }
