@@ -7,14 +7,14 @@ use Ramsey\Uuid\Uuid;
 
 class InventarioModel extends Model
 {
-    // 1. Ajustar nombre de la tabla según tu base de datos (vimos que es inventario_qr)
+    // 1. Tabla verificada en tu DB local
     protected $table            = 'inventario_qr';
     
-    // 2. Cambiar Llave Primaria a SKU
+    // 2. Llave Primaria
     protected $primaryKey       = 'sku';
     
-    // 3. Desactivar Auto Increment (el SKU es manual)
-    protected $useAutoIncrement = false;
+    // 3. SKU es manual
+    protected $useAutoIncrement = false; 
     
     protected $returnType       = 'array';
     protected $useSoftDeletes   = false;
@@ -24,35 +24,28 @@ class InventarioModel extends Model
     protected $createdField     = 'created_at';
     protected $updatedField     = 'updated_at';
 
+    // AJUSTADO: Solo columnas que existen en tu tabla física
     public $allowedFields = [
         'uuid',
         'sku',
-        'propietario',
-        'serie',
-        'descripcion',
+        'nombre',
+        'ubicacion_nombre',
         'created_at',
         'updated_at',
         'deleted_at'
     ];
 
-    // 4. Actualizar reglas de validación para la nueva PK (Se eliminaron id_area e id_categoria)
+    // AJUSTADO: Se eliminaron reglas de campos inexistentes (series, propietario, etc.)
     protected $validationRules = [
-        // is_unique ahora valida contra el campo sku
-        'sku'          => 'required|is_unique[inventario_qr.sku,sku,{sku}]|max_length[50]',
-        'serie'        => 'required|is_unique[inventario_qr.serie,sku,{sku}]|max_length[50]',
-        'propietario'  => 'required|max_length[255]',
-        'descripcion'  => 'permit_empty',
+        'sku'    => 'required|is_unique[inventario_qr.sku]|max_length[50]',
+        'nombre' => 'required|max_length[255]',
     ];
 
     protected $validationMessages = [
-        'propietario'      => ['required' => 'El propietario es obligatorio.'],
-        'sku'          => [
+        'nombre' => ['required' => 'El nombre del equipo es obligatorio.'],
+        'sku'    => [
             'required'  => 'El SKU es obligatorio.',
             'is_unique' => 'Este SKU ya existe.'
-        ],
-        'serie'          => [
-            'required'  => 'La serie es obligatorio.',
-            'is_unique' => 'Esta serie ya existe.'
         ]
     ];
 
@@ -67,17 +60,16 @@ class InventarioModel extends Model
     }
 
     /**
-     * 🔍 Buscar por SKU (Nueva función principal)
+     * 🔍 Buscar por SKU
      */
     public function findBySku(string $sku): ?array
     {
-        // Al ser PK, find($sku) ya funciona, pero hidratamos para el JSON
         $data = $this->where('sku', $sku)->where('deleted_at', 0)->first();
         return $data ? $this->hidratarDatos($data) : null;
     }
 
     /**
-     * 🔍 Mantener búsqueda por UUID (Si se requiere)
+     * 🔍 Buscar por UUID
      */
     public function findByUuid(string $uuid): ?array
     {
@@ -85,17 +77,9 @@ class InventarioModel extends Model
         return $data ? $this->hidratarDatos($data) : null;
     }
 
-    /**
-     * Reutilizamos la lógica de hidratación para no repetir código
-     */
     private function hidratarDatos(array $data): array
     {
-        // Se mantiene la estructura del método, pero se eliminó la consulta a tablas inexistentes
-        // para evitar el error 500 al no tener las tablas 'area' y 'categoria'
-
-        // Limpiar campos internos
         unset($data['updated_at'], $data['deleted_at']);
-
         return $data;
     }
 }
