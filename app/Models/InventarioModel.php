@@ -7,9 +7,15 @@ use Ramsey\Uuid\Uuid;
 
 class InventarioModel extends Model
 {
-    protected $table            = 'inventario';
-    protected $primaryKey       = 'id';
-    protected $useAutoIncrement = true;
+    // 1. Ajustar nombre de la tabla según tu base de datos (vimos que es inventario_qr)
+    protected $table            = 'inventario_qr';
+    
+    // 2. Cambiar Llave Primaria a SKU
+    protected $primaryKey       = 'sku';
+    
+    // 3. Desactivar Auto Increment (el SKU es manual)
+    protected $useAutoIncrement = false;
+    
     protected $returnType       = 'array';
     protected $useSoftDeletes   = false;
     protected $protectFields    = true;
@@ -22,8 +28,6 @@ class InventarioModel extends Model
         'uuid',
         'sku',
         'propietario',
-        'id_area',
-        'id_categoria',
         'serie',
         'descripcion',
         'created_at',
@@ -31,20 +35,17 @@ class InventarioModel extends Model
         'deleted_at'
     ];
 
+    // 4. Actualizar reglas de validación para la nueva PK (Se eliminaron id_area e id_categoria)
     protected $validationRules = [
-        // 'nombre' => ... ELIMINADO
-        'id_area'      => 'required|max_length[36]',
-        'id_categoria' => 'required|max_length[36]', // <--- 2. OBLIGATORIO
-        'sku'          => 'required|is_unique[inventario.sku,id,{id}]|max_length[50]',
-        'serie'          => 'required|is_unique[inventario.serie,id,{id}]|max_length[50]',
+        // is_unique ahora valida contra el campo sku
+        'sku'          => 'required|is_unique[inventario_qr.sku,sku,{sku}]|max_length[50]',
+        'serie'        => 'required|is_unique[inventario_qr.serie,sku,{sku}]|max_length[50]',
         'propietario'  => 'required|max_length[255]',
         'descripcion'  => 'permit_empty',
     ];
 
     protected $validationMessages = [
-        'id_area'      => ['required' => 'El UUID del área es obligatorio.'],
         'propietario'      => ['required' => 'El propietario es obligatorio.'],
-        'id_categoria' => ['required' => 'El UUID de la categoría es obligatorio.'],
         'sku'          => [
             'required'  => 'El SKU es obligatorio.',
             'is_unique' => 'Este SKU ya existe.'
@@ -65,35 +66,35 @@ class InventarioModel extends Model
         return $data;
     }
 
+    /**
+     * 🔍 Buscar por SKU (Nueva función principal)
+     */
+    public function findBySku(string $sku): ?array
+    {
+        // Al ser PK, find($sku) ya funciona, pero hidratamos para el JSON
+        $data = $this->where('sku', $sku)->where('deleted_at', 0)->first();
+        return $data ? $this->hidratarDatos($data) : null;
+    }
+
+    /**
+     * 🔍 Mantener búsqueda por UUID (Si se requiere)
+     */
     public function findByUuid(string $uuid): ?array
     {
         $data = $this->where('uuid', $uuid)->where('deleted_at', 0)->first();
-        if (!$data) return null;
+        return $data ? $this->hidratarDatos($data) : null;
+    }
 
-        $db = \Config\Database::connect();
+    /**
+     * Reutilizamos la lógica de hidratación para no repetir código
+     */
+    private function hidratarDatos(array $data): array
+    {
+        // Se mantiene la estructura del método, pero se eliminó la consulta a tablas inexistentes
+        // para evitar el error 500 al no tener las tablas 'area' y 'categoria'
 
-        // 1. Hidratar ÁREA (Traer nombre del área)
-        $data['area'] = null;
-        if (!empty($data['id_area'])) {
-            $area = $db->table('area')
-                ->select('uuid as id_area, nombre')
-                ->where('uuid', $data['id_area'])
-                ->get()->getRowArray();
-            if ($area) $data['area'] = $area;
-        }
-
-        // 2. Hidratar CATEGORÍA (Traer nombre de la categoría)
-        $data['categoria'] = null;
-        if (!empty($data['id_categoria'])) {
-            $cat = $db->table('categoria')
-                ->select('uuid as id_categoria, nombre')
-                ->where('uuid', $data['id_categoria'])
-                ->get()->getRowArray();
-            if ($cat) $data['categoria'] = $cat;
-        }
-
-        // Limpiamos los IDs internos para entregar un JSON limpio
-        unset($data['id_area'], $data['id_categoria'], $data['updated_at'], $data['deleted_at'], $data['id']);
+        // Limpiar campos internos
+        unset($data['updated_at'], $data['deleted_at']);
 
         return $data;
     }
