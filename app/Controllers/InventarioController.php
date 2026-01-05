@@ -28,6 +28,14 @@ class InventarioController extends ResourceController
         $this->categoriaModel = new CategoriaModel();
     }
 
+    // =========================================================================
+    // 1. SECCIÓN: LECTURA (READ)
+    // =========================================================================
+
+    /**
+     * 📋 Listar con Filtros y Paginación
+     * GET /inventario
+     */
     public function index()
     {
         $size = max(1, (int) ($this->request->getGet('size') ?? 10));
@@ -53,6 +61,7 @@ class InventarioController extends ResourceController
         $builder->orderBy('sku', 'ASC'); 
         $result = $builder->get($size, $offset)->getResultArray();
 
+        // Hidratación de objetos (Area y Categoría)
         foreach ($result as &$item) {
             $item = $this->inventarioModel->findBySku($item['sku']); 
         }
@@ -70,6 +79,36 @@ class InventarioController extends ResourceController
         ]);
     }
 
+    /**
+     * 🔍 Detalle por UUID
+     * GET /inventario/{uuid}
+     */
+    public function show($uuid = null)
+    {
+        if (empty($uuid)) return $this->failValidationErrors('UUID necesario.');
+        $item = $this->inventarioModel->findByUuid($uuid);
+        return $item ? $this->respond($item) : $this->failNotFound('No encontrado');
+    }
+
+    /**
+     * 🔍 Detalle por SKU
+     * GET /inventario/sku/{sku}
+     */
+    public function showsku($sku = null)
+    {
+        if (empty($sku)) return $this->failValidationErrors('SKU necesario');
+        $item = $this->inventarioModel->findBySku($sku);
+        return $item ? $this->respond($item) : $this->failNotFound('No encontrado');
+    }
+
+    // =========================================================================
+    // 2. SECCIÓN: ESCRITURA (CREATE)
+    // =========================================================================
+
+    /**
+     * ➕ Crear nuevo registro
+     * POST /inventario
+     */
     public function create()
     {
         $data = $this->request->getJSON(true) ?? [];
@@ -99,28 +138,14 @@ class InventarioController extends ResourceController
         ]);
     }
 
-    /**
-     * 🔍 Ver detalle por UUID (GET /inventario/{uuid})
-     */
-    public function show($uuid = null)
-    {
-        if (empty($uuid)) return $this->failValidationErrors('UUID necesario.');
-        
-        // CORRECCIÓN: Para el endpoint "BY ID" usamos findByUuid
-        $item = $this->inventarioModel->findByUuid($uuid);
-        return $item ? $this->respond($item) : $this->failNotFound('No encontrado');
-    }
+    // =========================================================================
+    // 3. SECCIÓN: ACTUALIZACIÓN (UPDATE)
+    // =========================================================================
 
     /**
-     * 🔍 Ver detalle por SKU (GET /inventario/sku/{sku})
+     * ✏️ Modificar datos existentes
+     * PATCH/PUT /inventario/{sku}
      */
-    public function showsku($sku = null)
-    {
-        if (empty($sku)) return $this->failValidationErrors('SKU necesario');
-        $item = $this->inventarioModel->findBySku($sku);
-        return $item ? $this->respond($item) : $this->failNotFound('No encontrado');
-    }
-
     public function update($sku = null)
     {
         if (empty($sku)) return $this->failValidationErrors('SKU necesario.');
@@ -129,6 +154,8 @@ class InventarioController extends ResourceController
         if (!$itemRaw) return $this->failNotFound('No encontrado');
 
         $data = $this->request->getJSON(true) ?? [];
+        
+        // Protegemos campos que no deben cambiarse manualmente
         unset($data['sku'], $data['uuid'], $data['created_at']);
 
         if (!$this->inventarioModel->update($sku, $data)) {
@@ -141,14 +168,28 @@ class InventarioController extends ResourceController
         ]);
     }
 
-    public function delete($sku = null)
-    {
-        if (empty($sku)) return $this->failValidationErrors('SKU necesario.');
+    // =========================================================================
+    // 4. SECCIÓN: ELIMINACIÓN (DELETE)
+    // =========================================================================
 
-        $itemRaw = $this->inventarioModel->where('sku', $sku)->where('deleted_at', 0)->first();
+    /**
+     * 🗑️ Borrado Lógico
+     * DELETE /inventario/{sku}
+     */
+    public function delete($uuid = null)
+    {
+        if (empty($uuid)) return $this->failValidationErrors('UUID necesario.');
+
+        $itemRaw = $this->inventarioModel->where('uuid', $uuid)->where('deleted_at', 0)->first();
         if (!$itemRaw) return $this->failNotFound('No encontrado');
 
-        $this->inventarioModel->update($sku, ['deleted_at' => 1]);
+        // --- INICIO CORRECCIÓN TÉCNICA ---
+        // Se usa builder()->update() para evitar que las reglas de validación 
+        // del modelo (como SKU único o requerido) bloqueen el borrado lógico.
+        $this->inventarioModel->builder()
+            ->where('uuid', $uuid)
+            ->update(['deleted_at' => 1]);
+        // --- FIN CORRECCIÓN TÉCNICA ---
 
         return $this->respondDeleted(['message' => 'Eliminado correctamente']);
     }

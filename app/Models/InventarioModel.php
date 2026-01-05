@@ -7,18 +7,23 @@ use Ramsey\Uuid\Uuid;
 
 class InventarioModel extends Model
 {
+    // =========================================================================
+    // 1. CONFIGURACIÓN DE TABLA Y CAMPOS
+    // =========================================================================
     protected $table            = 'inventario';
     protected $primaryKey       = 'sku';
     protected $useAutoIncrement = false; 
     protected $returnType       = 'array';
-    protected $useSoftDeletes   = false;
     protected $protectFields    = true;
 
     protected $useTimestamps    = true;
     protected $createdField     = 'created_at';
     protected $updatedField     = 'updated_at';
 
-    // AJUSTADO: Solo las columnas que existen en tu tabla física (image_95ffad.png)
+    /**
+     * Columnas permitidas para operaciones masivas.
+     * Incluye campos de auditoría y relaciones.
+     */
     public $allowedFields = [
         'uuid',
         'sku',
@@ -32,8 +37,9 @@ class InventarioModel extends Model
         'deleted_at'
     ];
 
-    // CORRECCIÓN ERROR 500: Se eliminó el placeholder {sku} que causaba conflicto
-    // CORRECCIÓN ERROR 400: Se eliminó 'nombre' porque la tabla no lo tiene
+    // =========================================================================
+    // 2. REGLAS DE VALIDACIÓN
+    // =========================================================================
     protected $validationRules = [
         'sku'          => 'required|is_unique[inventario.sku,sku,sku]|max_length[50]',
         'id_area'      => 'required',
@@ -47,8 +53,14 @@ class InventarioModel extends Model
         ]
     ];
 
+    // =========================================================================
+    // 3. EVENTOS (CALLBACKS)
+    // =========================================================================
     protected $beforeInsert = ['generateUUID'];
 
+    /**
+     * Genera un UUID v4 automáticamente antes de insertar un registro.
+     */
     protected function generateUUID(array $data): array
     {
         if (!isset($data['data']['uuid'])) {
@@ -57,8 +69,13 @@ class InventarioModel extends Model
         return $data;
     }
 
+    // =========================================================================
+    // 4. MÉTODOS DE BÚSQUEDA E HIDRATACIÓN (READ)
+    // =========================================================================
+
     /**
      * 🔍 Buscar por SKU
+     * Retorna el registro hidratado con objetos de Area y Categoría.
      */
     public function findBySku(string $sku): ?array
     {
@@ -69,7 +86,8 @@ class InventarioModel extends Model
     }
 
     /**
-     * 🔍 Buscar por UUID e Hidratar Objetos (Area y Categoría)
+     * 🔍 Buscar por UUID e Hidratar Objetos
+     * Transforma los IDs planos en objetos legibles para el JSON.
      */
     public function findByUuid(string $uuid): ?array
     {
@@ -78,7 +96,7 @@ class InventarioModel extends Model
 
         $db = \Config\Database::connect();
 
-        // 1. Hidratar ÁREA (Para mostrar objeto con nombre)
+        // 1. Hidratar ÁREA (Objeto con id_area y nombre)
         $data['area'] = null;   
         if (!empty($data['id_area'])) {
             $area = $db->table('area')
@@ -88,7 +106,7 @@ class InventarioModel extends Model
             if ($area) $data['area'] = $area;
         }
 
-        // 2. Hidratar CATEGORÍA (Para mostrar objeto con nombre)
+        // 2. Hidratar CATEGORÍA (Objeto con id_categoria y nombre)
         $data['categoria'] = null;
         if (!empty($data['id_categoria'])) {
             $cat = $db->table('categoria')
@@ -98,9 +116,15 @@ class InventarioModel extends Model
             if ($cat) $data['categoria'] = $cat;
         }
         
-        // Limpieza de campos técnicos
-        unset($data['id_area'], $data['id_categoria'], $data['updated_at'], $data['deleted_at'], $data['id']);
+        // 3. Limpieza de campos técnicos para la respuesta final
+        unset(
+            $data['id_area'], 
+            $data['id_categoria'], 
+            $data['updated_at'], 
+            $data['deleted_at'], 
+            $data['id']
+        );
 
         return $data;
     }
-}   
+}
