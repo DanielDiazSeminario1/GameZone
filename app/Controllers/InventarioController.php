@@ -77,7 +77,7 @@ class InventarioController extends ResourceController
                 'totalItems'  => $totalItems,
             ]
         ]);
-    }
+    }    
 
     /**
      * 🔍 Detalle por UUID
@@ -112,7 +112,6 @@ class InventarioController extends ResourceController
     public function create()
     {
         $data = $this->request->getJSON(true) ?? [];
-
         if (empty($data['id_area'])) return $this->failValidationErrors('id_area obligatorio.');
         if (empty($data['id_categoria'])) return $this->failValidationErrors('id_categoria obligatorio.');
 
